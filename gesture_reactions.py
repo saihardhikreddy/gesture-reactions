@@ -1,0 +1,218 @@
+"""Gesture Reactions: macOS-style video-call reactions for Windows.
+
+Reads your webcam, watches for hand signs with MediaPipe, plays a full-screen
+effect when it sees one, and sends the result to a virtual camera that Zoom,
+Teams, Meet, Discord etc. can select as "OBS Virtual Camera".
+
+WhatsApp Desktop hides OBS Virtual Camera, so for WhatsApp use --whatsapp: it
+opens a clean output window that OBS captures and passes on through DroidCam's
+virtual output (see README.md).
+
+    python gesture_reactions.py               # webcam 0 -> virtual camera + preview
+    python gesture_reactions.py --camera 1    # pick a different webcam
+    python gesture_reactions.py --no-virtual-cam   # preview window only
+    python gesture_reactions.py --whatsapp    # clean output window for OBS + DroidCam
+
+Keys in the preview window:
+    1-8   fire a reaction by hand (see REACTION_KEYS)
+    g     pause / resume gesture detection
+    l     show / hide hand landmarks in the preview
+    q/Esc quit
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import time
+import urllib.request
+
+import cv2
+import numpy as np
+
+from effects import EffectPlayer
+from gestures import ALL_REACTIONS, ReactionTrigger, classify_frame
+
+MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
+    "hand_landmarker/float16/latest/hand_landmarker.task"
+)
+HERE = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(HERE, "hand_landmarker.task")
+
+OUTPUT_WINDOW = "Gesture Reactions Output"
+REACTION_KEYS = {ord(str(i + 1)): name for i, name in enumerate(ALL_REACTIONS)}
+
+HAND_CONNECTIONS = [
+    (0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8),
+    (5, 9), (9, 10), (10, 11), (11, 12), (9, 13), (13, 14), (14, 15), (15, 16),
+    (13, 17), (17, 18), (18, 19), (19, 20), (0, 17),
+]
+
+
+def ensure_model() -> str:
+    if not os.path.exists(MODEL_PATH):
+        print("Downloading hand tracking model (~8 MB)...")
+        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+    return MODEL_PATH
+
+
+def make_detector():
+    import mediapipe as mp
+    from mediapipe.tasks.python import BaseOptions, vision
+
+    options = vision.HandLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path=ensure_model()),
+        running_mode=vision.RunningMode.VIDEO,
+        num_hands=2,
+        min_hand_detection_confidence=0.6,
+        min_hand_presence_confidence=0.6,
+        min_tracking_confidence=0.5,
+    )
+    detector = vision.HandLandmarker.create_from_options(options)
+
+    def detect(frame_bgr: np.ndarray, ts_ms: int):
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        return detector.detect_for_video(image, ts_ms).hand_landmarks
+
+    detect.close = detector.close
+    return detect
+
+
+def open_camera(source: str, width: int, height: int, fps: int):
+    if source.isdigit():
+        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+        cap = cv2.VideoCapture(int(source), backend)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        cap.set(cv2.CAP_PROP_FPS, fps)
+    else:
+        cap = cv2.VideoCapture(source)  # a video file, handy for testing
+    if not cap.isOpened():
+        sys.exit(f"Could not open camera/video '{source}'. Try --camera 1 or close other apps using it.")
+    return cap
+
+
+def draw_landmarks(frame, hands):
+    h, w = frame.shape[:2]
+    for lm in hands:
+        pts = [(int(p.x * w), int(p.y * h)) for p in lm]
+        for a, b in HAND_CONNECTIONS:
+            cv2.line(frame, pts[a], pts[b], (0, 255, 0), 2, cv2.LINE_AA)
+        for p in pts:
+            cv2.circle(frame, p, 3, (0, 0, 255), -1, cv2.LINE_AA)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="macOS-style gesture reactions for any video call app.")
+    ap.add_argument("--camera", default="0", help="webcam index (0, 1, ...) or a video file path")
+    ap.add_argument("--width", type=int, default=1280)
+    ap.add_argument("--height", type=int, default=720)
+    ap.add_argument("--fps", type=int, default=30)
+    ap.add_argument("--no-virtual-cam", action="store_true", help="only show the preview window")
+    ap.add_argument("--no-preview", action="store_true", help="don't open a preview window")
+    ap.add_argument("--whatsapp", action="store_true",
+                    help="skip the virtual camera and show an unmirrored output window for OBS to capture")
+    ap.add_argument("--hold", type=float, default=0.45, help="seconds a gesture must be held")
+    ap.add_argument("--cooldown", type=float, default=3.0, help="seconds between reactions")
+    args = ap.parse_args()
+    if args.whatsapp:
+        args.no_virtual_cam = True
+
+    cap = open_camera(args.camera, args.width, args.height, args.fps)
+    ok, frame = cap.read()
+    if not ok:
+        sys.exit("Camera opened but returned no frames.")
+    h, w = frame.shape[:2]
+    print(f"Camera: {w}x{h}")
+
+    cam = None
+    if not args.no_virtual_cam:
+        try:
+            import pyvirtualcam
+
+            cam = pyvirtualcam.Camera(width=w, height=h, fps=args.fps,
+                                      fmt=pyvirtualcam.PixelFormat.BGR)
+            print(f"Virtual camera started: {cam.device}. Pick it as the camera in your call app.")
+        except Exception as e:  # noqa: BLE001
+            print(f"Virtual camera unavailable ({e}).\n"
+                  "Install OBS Studio (it provides 'OBS Virtual Camera'), or run with --no-virtual-cam.")
+            if args.no_preview:
+                sys.exit(1)
+
+    detect = make_detector()
+    trigger = ReactionTrigger(hold_seconds=args.hold, cooldown_seconds=args.cooldown)
+    player = EffectPlayer()
+    detecting, show_landmarks = True, False
+    start = last = time.monotonic()
+    last_ts = -1
+    banner, banner_until = "", 0.0
+
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            now = time.monotonic()
+            dt, last = now - last, now
+
+            hands = []
+            if detecting:
+                ts = max(int((now - start) * 1000), last_ts + 1)  # must strictly increase
+                last_ts = ts
+                hands = detect(frame, ts)
+                # Don't stack reactions: only look for a new one when the screen is clear.
+                reaction = trigger.update(classify_frame(hands), now) if not player.busy else None
+                if reaction:
+                    player.trigger(reaction, w, h)
+                    banner, banner_until = reaction.replace("_", " "), now + 1.5
+                    print("Reaction:", reaction)
+
+            player.render(frame, dt)
+
+            if cam is not None:
+                cam.send(frame)
+            if args.whatsapp:
+                # Exactly what the other person should see: no mirroring, no text.
+                cv2.imshow(OUTPUT_WINDOW, frame)
+
+            if args.no_preview:
+                key = cv2.waitKey(1) & 0xFF if args.whatsapp else 255
+            else:
+                preview = cv2.flip(frame, 1)  # mirror, like a call app's self-view
+                if show_landmarks and hands:
+                    overlay = frame.copy()
+                    draw_landmarks(overlay, hands)
+                    preview = cv2.flip(overlay, 1)
+                status = "detecting" if detecting else "paused (g)"
+                if now < banner_until:
+                    status += f" | {banner}"
+                cv2.putText(preview, status, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                            (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.imshow("Gesture Reactions (preview, mirrored)", preview)
+                key = cv2.waitKey(1) & 0xFF
+            if key in (ord("q"), 27):
+                break
+            if key == ord("g"):
+                detecting = not detecting
+            elif key == ord("l"):
+                show_landmarks = not show_landmarks
+            elif key in REACTION_KEYS:
+                player.trigger(REACTION_KEYS[key], w, h)
+
+            if cam is not None:
+                cam.sleep_until_next_frame()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        cap.release()
+        detect.close()
+        if cam is not None:
+            cam.close()
+        cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
