@@ -12,6 +12,7 @@ virtual output (see README.md).
     python gesture_reactions.py --camera 1    # pick a different webcam
     python gesture_reactions.py --no-virtual-cam   # preview window only
     python gesture_reactions.py --whatsapp    # clean output window for OBS + DroidCam
+    python gesture_reactions.py --list-cameras     # which camera index is which
 
 Keys in the preview window:
     1-8   fire a reaction by hand (see REACTION_KEYS)
@@ -28,7 +29,10 @@ import sys
 import time
 import urllib.request
 
-import cv2
+# Media Foundation otherwise takes several seconds to open some webcams.
+os.environ.setdefault("OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS", "0")
+
+import cv2  # noqa: E402
 import numpy as np
 
 from effects import EffectPlayer
@@ -42,6 +46,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(HERE, "hand_landmarker.task")
 
 OUTPUT_WINDOW = "Gesture Reactions Output"
+BACKENDS = {"msmf": cv2.CAP_MSMF, "dshow": cv2.CAP_DSHOW}
+BLACK_MEAN = 3.0       # a frame darker than this on average counts as black
+WARMUP_SECONDS = 1.5   # how long a camera gets to deliver a non-black frame
 REACTION_KEYS = {ord(str(i + 1)): name for i, name in enumerate(ALL_REACTIONS)}
 
 HAND_CONNECTIONS = [
@@ -81,18 +88,111 @@ def make_detector():
     return detect
 
 
-def open_camera(source: str, width: int, height: int, fps: int):
-    if source.isdigit():
-        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
-        cap = cv2.VideoCapture(int(source), backend)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        cap.set(cv2.CAP_PROP_FPS, fps)
-    else:
-        cap = cv2.VideoCapture(source)  # a video file, handy for testing
+def is_black(frame, threshold: float = BLACK_MEAN) -> bool:
+    """True for a missing/empty frame or one that is (almost) pure black."""
+    return frame is None or frame.size == 0 or float(frame.mean()) < threshold
+
+
+def backend_order(choice: str = "auto") -> list[tuple[str, int]]:
+    if choice != "auto":
+        return [(choice, BACKENDS[choice])]
+    if sys.platform == "win32":
+        # DirectShow can open a webcam that another app (e.g. OBS) holds and
+        # then deliver only black frames, so try Media Foundation first.
+        return [("msmf", cv2.CAP_MSMF), ("dshow", cv2.CAP_DSHOW)]
+    return [("any", cv2.CAP_ANY)]
+
+
+def warm_up(cap, seconds: float | None = None):
+    """Read frames until one isn't black or time runs out. Returns the last frame read."""
+    frame = None
+    deadline = time.monotonic() + (WARMUP_SECONDS if seconds is None else seconds)
+    while time.monotonic() < deadline:
+        ok, f = cap.read()
+        if ok and f is not None:
+            frame = f
+            if not is_black(frame):
+                break
+        else:
+            time.sleep(0.05)
+    return frame
+
+
+def try_backend(index: int, api: int, width: int, height: int, fps: int, seconds: float | None = None):
+    """Open one camera index with one backend. Returns (cap or None, last frame or None)."""
+    cap = cv2.VideoCapture(index, api)
     if not cap.isOpened():
-        sys.exit(f"Could not open camera/video '{source}'. Try --camera 1 or close other apps using it.")
-    return cap
+        cap.release()
+        return None, None
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cap.set(cv2.CAP_PROP_FPS, fps)
+    return cap, warm_up(cap, seconds)
+
+
+def open_camera(source: str, width: int, height: int, fps: int, backend: str = "auto"):
+    """Returns (cap, first frame). Numeric sources try each backend until one gives a picture."""
+    if not source.isdigit():
+        cap = cv2.VideoCapture(source)  # a video file, handy for testing
+        if not cap.isOpened():
+            sys.exit(f"Could not open video '{source}'.")
+        ok, frame = cap.read()
+        if not ok:
+            sys.exit("Video opened but returned no frames.")
+        return cap, frame
+
+    black_backend = None
+    for name, api in backend_order(backend):
+        cap, frame = try_backend(int(source), api, width, height, fps)
+        if cap is None:
+            print(f"Camera {source} ({name}): could not open.")
+            continue
+        if frame is None:
+            print(f"Camera {source} ({name}): opened but returned no frames.")
+        elif is_black(frame):
+            print(f"Camera {source} ({name}): frames are black.")
+            black_backend = black_backend or (name, api)
+        else:
+            print(f"Camera {source}: using {name} backend.")
+            return cap, frame
+        cap.release()  # free the device before the next backend tries it
+
+    if black_backend is None:
+        sys.exit(f"Could not open camera {source}. Close other apps using it, "
+                 "or run with --list-cameras to see which index is your webcam.")
+    name, api = black_backend
+    cap, frame = try_backend(int(source), api, width, height, fps, seconds=0.2)
+    if cap is None or frame is None:
+        sys.exit(f"Could not reopen camera {source}.")
+    print(f"Camera {source}: using {name} backend, but it only gives BLACK frames.\n"
+          "  - Another app may be holding the webcam: close OBS (or remove its webcam source),\n"
+          "    Teams, Zoom, the Camera app and browser tabs using the camera.\n"
+          "  - Check Windows Settings > Privacy & security > Camera (allow desktop apps).\n"
+          "  - If that doesn't help, restart the PC.\n"
+          "  - Run with --list-cameras to check the other camera numbers.")
+    return cap, frame
+
+
+def list_cameras(width: int, height: int, fps: int, backend: str = "auto", max_index: int = 5):
+    try:  # hide OpenCV's "can't open index N" warnings, the table says it already
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_SILENT)
+    except AttributeError:
+        pass
+    print("index  backend  result")
+    for index in range(max_index + 1):
+        for name, api in backend_order(backend):
+            cap, frame = try_backend(index, api, width, height, fps, seconds=1.0)
+            if cap is None:
+                result = "not found"
+            elif frame is None:
+                result = "opens, but no frames"
+            else:
+                h, w = frame.shape[:2]
+                result = f"{w}x{h}, " + ("BLACK frames" if is_black(frame) else "picture OK")
+            if cap is not None:
+                cap.release()
+            print(f"{index:>5}  {name:<7}  {result}")
+    print("Use the index with 'picture OK', e.g. --camera 0 (add --backend msmf/dshow to force one).")
 
 
 def draw_landmarks(frame, hands):
@@ -111,6 +211,10 @@ def main():
     ap.add_argument("--width", type=int, default=1280)
     ap.add_argument("--height", type=int, default=720)
     ap.add_argument("--fps", type=int, default=30)
+    ap.add_argument("--backend", choices=["auto", "msmf", "dshow"], default="auto",
+                    help="camera API; auto tries Media Foundation, then DirectShow, skipping black ones")
+    ap.add_argument("--list-cameras", action="store_true",
+                    help="show which camera indexes 0-5 work with each backend, then exit")
     ap.add_argument("--no-virtual-cam", action="store_true", help="only show the preview window")
     ap.add_argument("--no-preview", action="store_true", help="don't open a preview window")
     ap.add_argument("--whatsapp", action="store_true",
@@ -120,11 +224,11 @@ def main():
     args = ap.parse_args()
     if args.whatsapp:
         args.no_virtual_cam = True
+    if args.list_cameras:
+        list_cameras(args.width, args.height, args.fps, args.backend)
+        return
 
-    cap = open_camera(args.camera, args.width, args.height, args.fps)
-    ok, frame = cap.read()
-    if not ok:
-        sys.exit("Camera opened but returned no frames.")
+    cap, frame = open_camera(args.camera, args.width, args.height, args.fps, args.backend)
     h, w = frame.shape[:2]
     print(f"Camera: {w}x{h}")
 
