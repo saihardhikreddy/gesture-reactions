@@ -4,9 +4,9 @@ Reads your webcam, watches for hand signs with MediaPipe, plays a full-screen
 effect when it sees one, and sends the result to a virtual camera that Zoom,
 Teams, Meet, Discord etc. can select as "OBS Virtual Camera".
 
-WhatsApp Desktop hides OBS Virtual Camera, so for WhatsApp use --whatsapp: it
-opens a clean output window that OBS captures and passes on through DroidCam's
-virtual output (see README.md).
+WhatsApp calls only list Media Foundation cameras, which OBS Virtual Camera
+isn't, so for WhatsApp use --whatsapp: it opens a clean output window that OBS
+captures and passes on as "DroidCam Video" (see README.md).
 
     python gesture_reactions.py               # webcam 0 -> virtual camera + preview
     python gesture_reactions.py --camera 1    # pick a different webcam
