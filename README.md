@@ -180,7 +180,13 @@ Then start with a number that says `picture OK`, for example `run-whatsapp.bat -
 <details>
 <summary><b>Reactions show in OBS but not in WhatsApp</b></summary>
 
-Either the virtual camera isn't running or the call is using the wrong camera. In OBS the button must say **Stop Virtual Camera** (click *Start Virtual Camera* if it doesn't). In WhatsApp pick **OBS Virtual Camera** in *Settings → Video & voice* **and** with the arrow next to the camera button inside the call. If you changed anything, quit WhatsApp from the tray and reopen it.
+WhatsApp is still using another camera. In OBS check that *Tools → DroidCam Virtual Output* is on. Then quit WhatsApp from the tray, reopen it, and pick **DroidCam Video** both in *Settings → Video & voice* **and** with the arrow next to the camera button inside the call.
+</details>
+
+<details>
+<summary><b>WhatsApp settings list OBS Virtual Camera, but the call doesn't</b></summary>
+
+That's expected. WhatsApp calls only offer Media Foundation cameras (your webcam, DroidCam Video, a Phone Link phone camera), and OBS Virtual Camera is an older DirectShow camera. Use the DroidCam route in [WhatsApp Desktop](#-whatsapp-desktop).
 </details>
 
 <details>
