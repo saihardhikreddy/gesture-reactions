@@ -54,6 +54,10 @@ The first run downloads the 8 MB hand-tracking model, so it takes a little longe
 > [!TIP]
 > For WhatsApp you also need DroidCam; see [WhatsApp Desktop](#-whatsapp-desktop).
 
+## 🔄 Updating
+
+Double-click **`update.bat`**. If you cloned with git it pulls the latest version; if you used the ZIP it tells you to download the new ZIP and extract it over the folder. Either way it then refreshes the Python packages.
+
 ## 📷 Pick your camera (once, and again if the window is black)
 
 Phone-link cameras and **OBS Virtual Camera** also show up as camera numbers, so number `0` is not always your webcam.
