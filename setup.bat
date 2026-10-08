@@ -8,4 +8,5 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt || (pause & exit /b 1)
 echo.
 echo Setup done. Double-click run.bat (Zoom/Meet/Teams) or run-whatsapp.bat (WhatsApp).
+echo WhatsApp also needs OBS and DroidCam: see the WhatsApp Desktop section of README.md.
 pause
