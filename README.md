@@ -112,6 +112,8 @@ python gesture_reactions.py [options]
   --width 1280 --height 720 --fps 30
   --hold 0.45       seconds a sign must be held
   --cooldown 3.0    seconds between reactions
+  --backend auto    camera API: auto (Media Foundation, then DirectShow), msmf or dshow
+  --list-cameras    show which camera numbers work and which give a black picture
   --whatsapp        output window for OBS + DroidCam instead of the virtual camera
   --no-virtual-cam  preview only
   --no-preview      no preview window
@@ -127,6 +129,18 @@ The .bat files pass options through, for example `run.bat --camera 1`.
 <summary><b>"Could not open camera"</b></summary>
 
 Close other apps using the webcam (including the call app's preview), or try `run.bat --camera 1`.
+</details>
+
+<details>
+<summary><b>Black window and the webcam light stays off</b></summary>
+
+Another app (often OBS with a webcam source) may be holding the camera, or a camera number now points at a different device. From a PowerShell window in this folder, run:
+
+```powershell
+.\run-whatsapp.bat --list-cameras
+```
+
+It prints each camera number with `picture OK` or `BLACK frames`. Then start with a number that says `picture OK`, for example `.\run-whatsapp.bat --camera 1` (add `--backend dshow` or `--backend msmf` if only one of them works). If every camera is black, close OBS and other camera apps, check *Settings → Privacy & security → Camera*, and restart the PC.
 </details>
 
 <details>
@@ -166,7 +180,7 @@ python scripts/make_demo.py    # regenerate assets/demo.gif and effects.png
 | `gesture_reactions.py` | webcam, hand tracking, virtual camera, windows, keys |
 | `gestures.py` | landmarks → signs → reactions, plus the hold/cooldown trigger |
 | `effects.py` | the eight animated effects |
-| `tests/` | rule tests that run without a webcam |
+| `tests/` | gesture-rule and camera-fallback tests that run without a webcam |
 
 ## 🗺️ Ideas
 
