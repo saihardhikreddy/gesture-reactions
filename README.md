@@ -249,6 +249,8 @@ python scripts/make_demo.py    # regenerate assets/demo.gif and effects.png
 | `gestures.py` | landmarks → signs → reactions, plus the hold/cooldown trigger |
 | `effects.py` | the eight animated effects |
 | `tests/` | gesture-rule and camera-fallback tests that run without a webcam |
+| `setup.bat` · `update.bat` | create the Python environment · pull the latest version |
+| `run.bat` · `run-whatsapp.bat` | start for Zoom/Meet/Teams · start for WhatsApp |
 
 ## 🗺️ Ideas
 
