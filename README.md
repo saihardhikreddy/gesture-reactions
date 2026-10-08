@@ -254,7 +254,7 @@ python scripts/make_demo.py    # regenerate assets/demo.gif and effects.png
 
 - [ ] System tray app with an on/off toggle
 - [ ] Custom gesture → effect mapping in a config file
-- [ ] Native Windows 11 virtual camera, so WhatsApp works without OBS
+- [ ] Native Windows 11 (Media Foundation) virtual camera, so WhatsApp works without OBS and DroidCam
 - [ ] Packaged `.exe` release
 
 ## 🙏 Credits
