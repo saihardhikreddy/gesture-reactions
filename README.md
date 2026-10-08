@@ -164,6 +164,12 @@ The .bat files pass options through, for example `run.bat --camera 1`.
 ## 🛠️ Troubleshooting
 
 <details>
+<summary><b><code>VIDEOIO(DSHOW): raised unknown C++ exception</code> then "Could not open camera"</b></summary>
+
+You're running an old version that only tried DirectShow. Run **`update.bat`**, then start the app again. The current version tries Media Foundation first and prints lines like `Camera 0: using msmf backend.`
+</details>
+
+<details>
 <summary><b>"Could not open camera"</b></summary>
 
 Close other apps using the webcam (including the call app's preview), then run `run-whatsapp.bat --list-cameras` and use a number that says `picture OK`, for example `run.bat --camera 1`.
