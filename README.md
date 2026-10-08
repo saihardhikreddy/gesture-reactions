@@ -25,63 +25,86 @@
 
 ## ✨ Reactions
 
-Hold a sign up to your webcam for about half a second.
+Hold a sign up to your webcam for about half a second, with your whole hand in frame. After a reaction there's a 3 second pause before the next one. You can also fire each one with its key.
 
-| Hand sign | | Reaction |
-|:--|:-:|:--|
-| 👍 One thumbs up | → | **Thumbs up** |
-| 👎 One thumbs down | → | **Thumbs down** |
-| 👍👍 Two thumbs up | → | **Fireworks** 🎆 |
-| 👎👎 Two thumbs down | → | **Rain** 🌧️ |
-| ✌️ One peace sign | → | **Balloons** 🎈 |
-| ✌️✌️ Two peace signs | → | **Confetti** 🎉 |
-| 🤘🤘 Two rock-on hands | → | **Lasers** 🔦 |
-| 🫶 Heart hands | → | **Hearts** 💖 |
+| Hand sign | | Reaction | Key |
+|:--|:-:|:--|:-:|
+| 👍 One thumbs up | → | **Thumbs up** | `1` |
+| 👎 One thumbs down | → | **Thumbs down** | `2` |
+| 👍👍 Two thumbs up | → | **Fireworks** 🎆 | `3` |
+| 👎👎 Two thumbs down | → | **Rain** 🌧️ | `4` |
+| ✌️ One peace sign | → | **Balloons** 🎈 | `5` |
+| ✌️✌️ Two peace signs | → | **Confetti** 🎉 | `6` |
+| 🤘🤘 Two rock-on hands | → | **Lasers** 🔦 | `7` |
+| 🫶 Heart hands (index fingertips touch at the top, thumb tips at the bottom) | → | **Hearts** 💖 | `8` |
 
 <p align="center"><img src="assets/effects.png" alt="All eight effects" width="100%"></p>
 
-## 🚀 Quick start
+## 🚀 Setup (once)
 
-**You need:** Windows 10 or 11, a webcam, [Python 3.12+](https://www.python.org/downloads/) (tick *Add python.exe to PATH*) and [OBS Studio](https://obsproject.com/) (it supplies the virtual camera driver).
+You need Windows 10 or 11 and a webcam.
 
-```powershell
-git clone https://github.com/saihardhikreddy/gesture-reactions.git
-cd gesture-reactions
-setup.bat
-```
+1. **Install Python 3.12** from [python.org](https://www.python.org/downloads/). On the first installer screen, tick **Add python.exe to PATH**, then click *Install Now*.
+2. **Install [OBS Studio](https://obsproject.com/).** It provides the **OBS Virtual Camera** that call apps pick up. Open it once and accept the defaults.
+3. **Download this app:** on this GitHub page click **Code → Download ZIP**, then right-click the ZIP → **Extract All…** (for example to your Desktop).
+4. **Open the extracted `gesture-reactions` folder and double-click `setup.bat`.** It creates a private Python environment and installs everything. Wait for *Setup done*, then press any key.
 
-No git? Click **Code → Download ZIP**, unzip it and double-click `setup.bat`.
+The first run downloads the 8 MB hand-tracking model, so it takes a little longer.
 
-Then pick your app:
+> [!TIP]
+> The DroidCam OBS plugin is only needed if your WhatsApp doesn't list **OBS Virtual Camera** (see step 6 below).
 
-| Calling on | Run | Choose this camera in the app |
-|:--|:--|:--|
-| Zoom · Meet · Teams · Discord · Skype | `run.bat` | **OBS Virtual Camera** |
-| WhatsApp Desktop | `run-whatsapp.bat` | **DroidCam Video** (see below) |
+## 📷 Pick your camera (once, and again if the window is black)
 
-The first run downloads the 8 MB hand-tracking model. Keep the app running for the whole call.
+Phone-link cameras and **OBS Virtual Camera** also show up as camera numbers, so number `0` is not always your webcam.
 
-## 💬 WhatsApp Desktop
+1. Open the `gesture-reactions` folder in File Explorer, click the address bar, type `cmd` and press **Enter**. A command window opens in that folder.
+2. Run:
 
-WhatsApp Desktop doesn't list OBS Virtual Camera, so the video takes a short detour through OBS and the free DroidCam virtual camera, which WhatsApp accepts.
+   ```bat
+   run-whatsapp.bat --list-cameras
+   ```
+
+   It prints each camera number with `picture OK` or `BLACK frames`, for example:
+
+   ```text
+   index  backend  result
+       0  msmf     1280x720, picture OK
+       1  msmf     1280x720, picture OK
+   ```
+
+   Your webcam is the one that says `picture OK` and turns its light on while it's tested. If you're not sure, try each number in the next step.
+3. Start the app with that number, for example `run-whatsapp.bat --camera 0` (or `run.bat --camera 0`). The .bat files pass any options through, so use the same `--camera N` every time.
+
+## 💬 WhatsApp Desktop (every call, in this order)
 
 ```mermaid
 flowchart LR
-    A[Gesture Reactions<br/>output window] -->|Window Capture| B[OBS Studio]
-    B -->|DroidCam Virtual Output| C[WhatsApp<br/>camera: DroidCam Video]
+    A[Webcam] --> B[Gesture Reactions<br/>output window]
+    B -->|Window Capture| C[OBS Studio]
+    C -->|Start Virtual Camera| D[WhatsApp<br/>camera: OBS Virtual Camera]
 ```
 
-**Once:** install the DroidCam OBS plugin from the [releases page](https://github.com/dev47apps/droidcam-obs-plugin/releases), restart your PC, and in OBS set *Settings → Video* to 1280×720 at 30 FPS.
+1. **Close WhatsApp completely:** right-click its icon in the system tray (bottom-right, near the clock) → **Quit**. Closing the window isn't enough.
+2. **Run `run-whatsapp.bat`** (add `--camera N` if you need it, from the command window). Wait until you see your face in the **Gesture Reactions Output** window. Don't minimise it; behind other windows is fine.
+3. **Open OBS.** *First time only:* under **Sources** click **+ → Window Capture**, click OK, choose **`[python.exe]: Gesture Reactions Output`** as the window, click OK, then right-click the source → **Transform → Fit to screen** (or press **Ctrl+F**). OBS remembers this scene.
+4. **In OBS click Start Virtual Camera** (bottom-right). The button changes to **Stop Virtual Camera**.
+5. **Open WhatsApp** → **Settings → Video & voice → Camera** = **OBS Virtual Camera**.
+6. **In the call**, also check the small arrow next to the camera button and pick **OBS Virtual Camera** there.
 
-**Every call:**
+Never set WhatsApp to your real webcam: the app is already using it, and WhatsApp would show a black picture or no reactions.
 
-1. Double-click `run-whatsapp.bat`. A window called **Gesture Reactions Output** opens; leave it un-minimised (behind other windows is fine).
-2. In OBS add **+ → Window Capture → `[python.exe]: Gesture Reactions Output`** (capture method *Windows 10 (1903 and up)*), then right-click it → *Transform → Fit to screen*. OBS remembers this, so it's a one-time step too.
-3. In OBS turn on **Tools → DroidCam Virtual Output**.
-4. In WhatsApp pick **DroidCam Video** under *Settings → Video & voice*.
+**If WhatsApp doesn't list OBS Virtual Camera:** install the DroidCam OBS plugin from its [releases page](https://github.com/dev47apps/droidcam-obs-plugin/releases) and restart the PC. Then in step 4 turn on **Tools → DroidCam Virtual Output** in OBS instead, and in steps 5–6 pick **DroidCam Video**.
 
 > [!NOTE]
 > This works for WhatsApp on a PC. It can't add effects to calls made from the WhatsApp phone app.
+
+## 🎥 Zoom · Google Meet · Microsoft Teams · Discord
+
+1. Double-click **`run.bat`** (or run `run.bat --camera N` from the command window). A mirrored preview window opens.
+2. In the call app's video settings, pick **OBS Virtual Camera**. You don't need to open OBS for these apps.
+
+Keep the app running for the whole call.
 
 ## 🧠 How it works
 
@@ -128,25 +151,43 @@ The .bat files pass options through, for example `run.bat --camera 1`.
 <details>
 <summary><b>"Could not open camera"</b></summary>
 
-Close other apps using the webcam (including the call app's preview), or try `run.bat --camera 1`.
+Close other apps using the webcam (including the call app's preview), then run `run-whatsapp.bat --list-cameras` and use a number that says `picture OK`, for example `run.bat --camera 1`.
 </details>
 
 <details>
 <summary><b>Black window and the webcam light stays off</b></summary>
 
-Another app (often OBS with a webcam source) may be holding the camera, or a camera number now points at a different device. From a PowerShell window in this folder, run:
+Another app (often OBS with a webcam source, Teams or the Camera app) may be holding the webcam, or the camera number now points at a different device. In a command window in this folder (type `cmd` in Explorer's address bar), run:
 
-```powershell
-.\run-whatsapp.bat --list-cameras
+```bat
+run-whatsapp.bat --list-cameras
 ```
 
-It prints each camera number with `picture OK` or `BLACK frames`. Then start with a number that says `picture OK`, for example `.\run-whatsapp.bat --camera 1` (add `--backend dshow` or `--backend msmf` if only one of them works). If every camera is black, close OBS and other camera apps, check *Settings → Privacy & security → Camera*, and restart the PC.
+Then start with a number that says `picture OK`, for example `run-whatsapp.bat --camera 1`. Add `--backend dshow` or `--backend msmf` if only one of them works. If every camera is black, close OBS and other camera apps, check *Settings → Privacy & security → Camera* (allow desktop apps), and restart the PC.
+</details>
+
+<details>
+<summary><b>Reactions show in OBS but not in WhatsApp</b></summary>
+
+Either the virtual camera isn't running or the call is using the wrong camera. In OBS the button must say **Stop Virtual Camera** (click *Start Virtual Camera* if it doesn't). In WhatsApp pick **OBS Virtual Camera** in *Settings → Video & voice* **and** with the arrow next to the camera button inside the call. If you changed anything, quit WhatsApp from the tray and reopen it.
+</details>
+
+<details>
+<summary><b>My video only fills a corner of the OBS picture</b></summary>
+
+In OBS click the Window Capture source and press **Ctrl+F** (right-click → *Transform → Fit to screen*).
+</details>
+
+<details>
+<summary><b>Lots of log lines like <code>W0000</code> or TensorFlow Lite messages</b></summary>
+
+Those come from MediaPipe when it starts and are harmless. Ignore them.
 </details>
 
 <details>
 <summary><b>"Virtual camera unavailable"</b></summary>
 
-Install OBS Studio. If OBS's own *Start Virtual Camera* is on, stop it: only one program can feed the virtual camera at a time.
+This message comes from `run.bat`. Install OBS Studio, and if OBS's own *Start Virtual Camera* is on, stop it: only one program can feed the virtual camera at a time. (`run-whatsapp.bat` doesn't use it directly; there OBS starts the virtual camera itself.)
 </details>
 
 <details>
