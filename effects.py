@@ -230,15 +230,6 @@ def grade(frame: np.ndarray, amount: float, gain=(1.0, 1.0, 1.0), lift=(0, 0, 0)
         cv2.subtract(frame, dark, dst=frame)
 
 
-def tint(frame: np.ndarray, color, amount: float):
-    """Blend the whole frame toward a colour (amount 0..1)."""
-    if amount <= 0:
-        return
-    keep = 1 - amount
-    cv2.multiply(frame, (keep, keep, keep, 0), dst=frame)
-    cv2.add(frame, tuple(c * amount for c in color) + (0,), dst=frame)
-
-
 # ---------------------------------------------------------------- sprite shading
 
 _SPRITES: dict[tuple, np.ndarray] = {}
@@ -411,6 +402,65 @@ def balloon_sprite(size: int, color, blur=0.0) -> np.ndarray:
         rgb = rgb + (win * mask * 0.6)[..., None] * (1 - rgb)
         return finish_sprite(np.clip(rgb, 0, 1), mask * 0.96, ss, blur=blur)
     return cached(("balloon", size, tuple(color), blur), build)
+
+
+def _fbm(h: int, w: int, rng: random.Random, octaves=4) -> np.ndarray:
+    """Smooth value noise in 0..1, for natural-looking texture."""
+    out = np.zeros((h, w), np.float32)
+    amp, total = 1.0, 0.0
+    for o in range(octaves):
+        gh, gw = 3 * 2 ** o + 1, int(3 * 2 ** o * w / max(h, 1)) + 1
+        grid = np.array([[rng.random() for _ in range(gw)] for _ in range(gh)], np.float32)
+        out += cv2.resize(grid, (w, h), interpolation=cv2.INTER_CUBIC) * amp
+        total += amp
+        amp *= 0.5
+    return np.clip(out / total, 0, 1)
+
+
+def cloud_sprite(width: int, height: int, seed=11) -> np.ndarray:
+    """A dark rain-cloud ceiling, width x height px, with a soft, billowing underside.
+
+    The cloud is a density field (overlapping puffs times noise). Each pixel is
+    lit by how much cloud lies between it and the light above, so the
+    underside darkens and thin edges stay bright and wispy."""
+    def build():
+        ss = 2
+        w, h = width * ss, height * ss
+        rng = random.Random(seed)
+        mask = np.zeros((h, w), np.float32)
+        mask[: int(h * 0.22)] = 1
+        highlight = np.zeros((h, w), np.float32)
+        n = max(8, int(w / (h * 0.16)))
+        puffs = [((i + rng.uniform(0.0, 1.0)) / n * 1.1 * w - 0.05 * w, rng.uniform(0.24, 0.36) * h,
+                  rng.uniform(0.13, 0.2) * h) for i in range(n)]  # big billows, evenly spread
+        puffs += [(rng.uniform(-0.05, 1.05) * w, rng.uniform(0.44, 0.54) * h, rng.uniform(0.05, 0.1) * h)
+                  for _ in range(40)]  # smaller lumps along the underside
+        for x, y, r in puffs:
+            if r < 0.11 * h and mask[max(0, int(y - r * 0.9)), min(w - 1, max(0, int(x)))] < 0.5:
+                continue  # only add lumps that hang from the cloud above
+            cv2.circle(mask, (int(x), int(y)), int(r), 1.0, -1, cv2.LINE_AA)
+            # Each billow catches light on its upper left.
+            cv2.circle(highlight, (int(x - r * 0.3), int(y - r * 0.3)), int(r * 0.45), 1.0, -1)
+        highlight = cv2.GaussianBlur(highlight, (0, 0), h * 0.045)
+        density = cv2.GaussianBlur(mask, (0, 0), h * 0.012) * (0.75 + 0.5 * _fbm(h, w, rng))
+        # Light from above and a little from the left: integrate density along that path.
+        reach = int(h * 0.07)
+        col = np.cumsum(density, axis=0)
+        above = col - np.vstack([np.zeros((reach, w), np.float32), col[:-reach]])
+        rowc = np.cumsum(density, axis=1)
+        left = rowc - np.hstack([np.zeros((h, reach), np.float32), rowc[:, :-reach]])
+        lit = np.exp(-(above * 1.0 + left * 0.4) / reach * 1.4)
+        lit = cv2.GaussianBlur(lit, (0, 0), h * 0.006)
+        yy = np.linspace(0, 1, h, dtype=np.float32)[:, None]
+        lit = lit * 0.8 + 0.25 * (1 - yy)  # some sky light from above everywhere
+        dark = np.array([70, 65, 63], np.float32) / 255     # BGR
+        bright = np.array([185, 178, 175], np.float32) / 255
+        texture = 0.92 + 0.16 * _fbm(h, w, rng)
+        lit = np.clip(lit + 0.22 * highlight * mask, 0, 1.1)
+        color = (dark + (bright - dark) * lit[..., None]) * texture[..., None]
+        alpha = np.clip(density * 1.4, 0, 1) ** 0.8 * 0.96
+        return finish_sprite(np.clip(color, 0, 1), alpha, ss)
+    return cached(("cloud", width, height, seed), build)
 
 
 # -- emoji (vector paths, shaded at load time)
@@ -821,37 +871,73 @@ class FireworksEffect(Effect):
 
 
 class RainEffect(Effect):
-    duration = 3.6
+    """A dark cloud rolls in, the room turns grey-blue and rain streaks down with splashes."""
 
-    def __init__(self, w, h):
-        super().__init__(w, h)
-        self.drops = [self._drop(random.uniform(-h, h)) for _ in range(int(w * 0.35))]
-        self.clouds = [(random.uniform(-0.1, 1.1) * w, random.uniform(-0.05, 0.08) * h,
-                        random.uniform(0.12, 0.22) * w) for _ in range(9)]
+    duration = 4.4
+    fade_in = 0.45
+    fade_out = 0.9
 
-    def _drop(self, y):
-        return [random.uniform(0, self.w), y, random.uniform(0.9, 1.6) * self.h,
-                random.uniform(0.03, 0.06) * self.h]
+    def __init__(self, w, h, seed=None):
+        super().__init__(w, h, seed)
+        rng = self.rng
+        self.cloud = cloud_sprite(int(w * 1.1), int(h * 0.56))
+        n = int(260 * (w * h) / (1280 * 720)) + 30
+        self.slant = 0.12
+        d = np.array([rng.random() for _ in range(n)], np.float32)  # depth 0 far .. 1 near
+        self.depth = d
+        self.x = np.array([rng.uniform(-0.05, 1.1) * w for _ in range(n)], np.float32)
+        self.y = np.array([rng.uniform(-1.1, 0.0) * h for _ in range(n)], np.float32)
+        self.v = (1.3 + 1.2 * d) * h * np.array([rng.uniform(0.9, 1.1) for _ in range(n)], np.float32)
+        self.len = (0.035 + 0.06 * d) * h
+        self.splashes = []
 
     def update(self, dt):
         super().update(dt)
-        for d in self.drops:
-            d[1] += d[2] * dt
-            if d[1] > self.h and self.t < self.duration - 0.8:
-                d[:] = self._drop(random.uniform(-0.2 * self.h, 0))
+        self.y += self.v * dt
+        self.x -= self.v * self.slant * dt
+        ground = self.h * (0.86 + 0.12 * self.depth)
+        hit = self.y > ground
+        for i in np.nonzero(hit & (self.depth > 0.7))[0][:6]:
+            self.splashes.append([float(self.x[i]), float(ground[i]), 0.0, float(self.depth[i])])
+        if self.t < self.duration - 1.0:
+            idx = np.nonzero(hit)[0]
+            self.y[idx] = self.h * 0.2 - self.rng.random() * self.h * 0.2
+            self.x[idx] = np.array([self.rng.uniform(-0.05, 1.15) * self.w for _ in idx], np.float32)
+        else:
+            self.y[hit] = self.h * 3  # let the last drops fall away
+        for s in self.splashes:
+            s[2] += dt
+        self.splashes = [s for s in self.splashes if s[2] < 0.3]
 
     def draw(self, frame):
         e = self.envelope
-        tint(frame, (90, 60, 40), 0.4 * e)
-        overlay = frame.copy()
-        for x, y, _, length in self.drops:
-            cv2.line(overlay, (int(x), int(y)), (int(x - length * 0.12), int(y + length)),
-                     (235, 215, 200), 2, cv2.LINE_AA)
-        shift = -self.h * 0.25 * (1 - min(1.0, self.t / 0.5))
-        for cx, cy, r in self.clouds:
-            cv2.ellipse(overlay, (int(cx), int(cy + shift)), (int(r), int(r * 0.55)),
-                        0, 0, 360, (95, 90, 90), -1, cv2.LINE_AA)
-        cv2.addWeighted(overlay, 0.85 * e, frame, 1 - 0.85 * e, 0, dst=frame)
+        grade(frame, e, gain=(0.88, 0.76, 0.7), lift=(14, 6, 0), contrast=0.9, desaturate=0.6,
+              vignette=0.4)
+        layer = np.zeros_like(frame)
+        for x, y, ln, d in zip(self.x, self.y, self.len, self.depth):
+            if y < -ln or y > self.h * 1.1:
+                continue
+            v = float(60 + 110 * d)
+            x1, y1 = x + ln * self.slant, y - ln          # tail
+            xm, ym = x + ln * self.slant * 0.5, y - ln * 0.5
+            thick = 1 if d < 0.75 else 2
+            cv2.line(layer, (int(x1 * 4), int(y1 * 4)), (int(xm * 4), int(ym * 4)),
+                     (v * 0.45, v * 0.44, v * 0.42), thick, cv2.LINE_AA, shift=2)
+            cv2.line(layer, (int(xm * 4), int(ym * 4)), (int(x * 4), int(y * 4)),
+                     (v, v * 0.97, v * 0.93), thick, cv2.LINE_AA, shift=2)
+        for x, y, age, d in self.splashes:
+            f = age / 0.3
+            rx, ry = self.h * (0.008 + 0.02 * f) * (0.5 + d), self.h * (0.003 + 0.006 * f) * (0.5 + d)
+            v = 140 * (1 - f)
+            cv2.ellipse(layer, (int(x * 4), int(y * 4)), (int(rx * 4), int(ry * 4)), 0, 180, 360,
+                        (v, v, v), 1, cv2.LINE_AA, shift=2)
+        add_layer(frame, layer, gain=0.7 * e)
+        # The cloud rolls in from the top with a soft ease and drifts a little.
+        drop = ease_out_cubic(self.t / 1.0)
+        ch = self.cloud.shape[0]
+        y = lerp(-ch * 0.5, ch * 0.5 - self.h * 0.03, drop)
+        x = self.w / 2 + math.sin(self.t * 0.5) * self.w * 0.012
+        blit(frame, self.cloud, x, y, 1.0, e)
 
 
 # ---------------------------------------------------------------- balloons
@@ -1149,7 +1235,7 @@ def make_effect(name: str, w: int, h: int, seed: int | None = None) -> Effect:
         REACTION_THUMBS_UP: lambda: ThumbEffect(w, h, up=True, seed=seed),
         REACTION_THUMBS_DOWN: lambda: ThumbEffect(w, h, up=False, seed=seed),
         REACTION_FIREWORKS: lambda: FireworksEffect(w, h, seed=seed),
-        REACTION_RAIN: lambda: RainEffect(w, h),
+        REACTION_RAIN: lambda: RainEffect(w, h, seed=seed),
         REACTION_BALLOONS: lambda: BalloonsEffect(w, h, seed=seed),
         REACTION_CONFETTI: lambda: ConfettiEffect(w, h, seed=seed),
         REACTION_LASERS: lambda: LasersEffect(w, h, seed=seed),
