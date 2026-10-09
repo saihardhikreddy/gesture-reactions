@@ -51,11 +51,13 @@ BLACK_MEAN = 3.0       # a frame darker than this on average counts as black
 WARMUP_SECONDS = 1.5   # how long a camera gets to deliver a non-black frame
 WHATSAPP_STEPS = """\
 WhatsApp mode: the "Gesture Reactions Output" window is what the other person sees.
-  1. Keep that window open (not minimised).
-  2. In OBS: Window Capture of '[python.exe]: Gesture Reactions Output', then Ctrl+F.
-  3. In OBS: Tools > DroidCam Virtual Output (on). Not 'Start Virtual Camera'.
-  4. Quit WhatsApp from the tray, reopen it, and pick 'DroidCam Video' as the camera.
-  5. Press 1 in the Output window to test."""
+  1. Keep that window open (not minimised). Quit WhatsApp from the tray first if it's running.
+  2. In OBS: Window Capture of '[python.exe]: Gesture Reactions Output', then Ctrl+F
+     (OBS video 1280x720, 30 FPS). Check the OBS preview shows you.
+  3. In OBS: Tools > DroidCam Virtual Output (ticked). Not 'Start Virtual Camera'. Keep OBS open.
+  4. Open WhatsApp, start the call, and pick 'DroidCam Video' with the arrow next to the camera button.
+  5. Press 1 in the Output window to test.
+Needs the DroidCam Client and its OBS plugin: see 'DroidCam Client and OBS setup' in README.md."""
 REACTION_KEYS = {ord(str(i + 1)): name for i, name in enumerate(ALL_REACTIONS)}
 
 HAND_CONNECTIONS = [
