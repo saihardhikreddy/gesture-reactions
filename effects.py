@@ -299,18 +299,6 @@ def glow(layer: np.ndarray, sigma: float) -> np.ndarray:
     return cv2.resize(small, (w, h), interpolation=cv2.INTER_LINEAR)
 
 
-def heart_polygon(cx, cy, size, angle=0.0):
-    t = np.linspace(0, 2 * np.pi, 40)
-    x = 16 * np.sin(t) ** 3
-    y = -(13 * np.cos(t) - 5 * np.cos(2 * t) - 2 * np.cos(3 * t) - np.cos(4 * t))
-    pts = np.stack([x, y], axis=1) * (size / 32.0)
-    if angle:
-        c, s = math.cos(angle), math.sin(angle)
-        pts = pts @ np.array([[c, s], [-s, c]])
-    pts += (cx, cy)
-    return pts.astype(np.int32)
-
-
 # ---------------------------------------------------------------- sprite shading
 
 _SPRITES: dict[tuple, np.ndarray] = {}
@@ -414,6 +402,43 @@ def sparkle(size: int, color=(255, 250, 240)) -> np.ndarray:
         v = rays + np.exp(-d2 / 0.006) + 0.35 * np.exp(-d2 / 0.05)
         return (np.clip(v, 0, 1)[..., None] * np.asarray(color, np.float32)).astype(np.uint8)
     return cached(("sparkle", size, tuple(color)), build)
+
+
+# -- shapes
+
+
+def heart_points(cx, cy, size, n=160) -> np.ndarray:
+    """Outline of a plump heart, size = width in pixels."""
+    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    x = 16 * np.sin(t) ** 3
+    y = -(13 * np.cos(t) - 5 * np.cos(2 * t) - 2 * np.cos(3 * t) - np.cos(4 * t))
+    pts = np.stack([x, y + 2.5], axis=1) * (size / 34.0)
+    return pts + (cx, cy)
+
+
+def heart_sprite(size: int, blur=0.0) -> np.ndarray:
+    """Glossy red 3D heart, about size px wide."""
+    def build():
+        ss = 3
+        s = size * ss
+        pad = int(s * 0.12)
+        cw = s + 2 * pad
+        mask = np.zeros((cw, cw), np.float32)
+        pts = heart_points(cw / 2, cw / 2, s)
+        cv2.fillPoly(mask, [(pts * 16).astype(np.int32)], 1.0, cv2.LINE_AA, shift=4)
+        yy = np.linspace(0, 1, cw, dtype=np.float32)[:, None, None]
+        top = np.array([110, 80, 255], np.float32) / 255     # BGR: warm pink-red
+        bottom = np.array([70, 20, 215], np.float32) / 255   # deeper crimson
+        color = np.broadcast_to(top + (bottom - top) * yy, (cw, cw, 3)).copy()
+        rgb = inflate(mask, color, bevel=1.0, ambient=0.5, diffuse=0.62, specular=0.55,
+                      shininess=24, rim=0.25)
+        # The soft "window" reflection on the left lobe that makes it look glossy.
+        hl = soft_ellipse(mask.shape, cw / 2 - s * 0.2, cw / 2 - s * 0.14, s * 0.11, s * 0.06,
+                          -35, blur=s * 0.012)
+        rgb = rgb + (hl * mask * 0.75)[..., None] * (1 - rgb)
+        return finish_sprite(rgb, mask, ss, shadow=0.0, blur=blur,
+                             glow=((0.45, 0.35, 1.0), 0.3, 0.03))
+    return cached(("heart", size, blur), build)
 
 
 # ---------------------------------------------------------------- base effect
@@ -706,37 +731,52 @@ class LasersEffect(Effect):
 
 
 class HeartsEffect(Effect):
-    duration = 3.8
+    """Glossy 3D hearts pop up from the bottom and float away, with depth of field."""
 
-    def __init__(self, w, h):
-        super().__init__(w, h)
+    duration = 4.0
+    fade_in = 0.3
+    fade_out = 0.8
+
+    # (relative size, blur, speed in heights/s, opacity, count)
+    LAYERS = [(0.09, 0.006, 0.26, 0.8, 11), (0.17, 0.0, 0.36, 1.0, 14), (0.3, 0.012, 0.5, 0.95, 4)]
+
+    def __init__(self, w, h, seed=None):
+        super().__init__(w, h, seed)
+        rng = self.rng
+        self.sprites = [heart_sprite(int(h * s), blur) for s, blur, *_ in self.LAYERS]
         self.hearts = []
-        for _ in range(26):
-            self.hearts.append({
-                "x": random.uniform(0.05, 0.95) * w,
-                "y": h + random.uniform(0, h * 0.9),
-                "s": random.uniform(0.04, 0.09) * min(w, h) * 1.6,
-                "v": random.uniform(0.3, 0.55) * h,
-                "phase": random.uniform(0, 6.28),
-                "color": random.choice([(80, 40, 235), (140, 90, 255), (60, 20, 200),
-                                        (180, 120, 255), (120, 60, 255)]),
-            })
-
-    def update(self, dt):
-        super().update(dt)
-        for hd in self.hearts:
-            hd["y"] -= hd["v"] * dt
+        for layer, (s, _, speed, opacity, n) in enumerate(self.LAYERS):
+            for i in range(n):
+                self.hearts.append({
+                    "layer": layer,
+                    "x": (i + rng.uniform(0.1, 0.9)) / n * w,
+                    "y0": h + h * s * 0.7,
+                    "t0": rng.uniform(0, 1.9),
+                    "v": speed * h * rng.uniform(0.85, 1.15),
+                    "scale": rng.uniform(0.75, 1.0),
+                    "sway": rng.uniform(0.02, 0.05) * w,
+                    "freq": rng.uniform(0.6, 1.1),
+                    "phase": rng.uniform(0, 2 * math.pi),
+                    "tilt": rng.uniform(-14, 14),
+                    "opacity": opacity,
+                })
+        self.hearts.sort(key=lambda d: d["layer"])
 
     def draw(self, frame):
-        tint(frame, (120, 80, 255), 0.18 * self.envelope)
-        overlay = frame.copy()
-        for hd in self.hearts:
-            beat = 1 + 0.08 * math.sin(self.t * 10 + hd["phase"])
-            x = hd["x"] + math.sin(self.t * 2 + hd["phase"]) * hd["s"] * 0.5
-            poly = heart_polygon(x, hd["y"], hd["s"] * beat, math.sin(self.t + hd["phase"]) * 0.25)
-            cv2.fillPoly(overlay, [poly], hd["color"], cv2.LINE_AA)
-        a = 0.9 * self.envelope
-        cv2.addWeighted(overlay, a, frame, 1 - a, 0, dst=frame)
+        e = self.envelope
+        grade(frame, e, gain=(0.97, 0.94, 1.05), lift=(8, 0, 14), vignette=0.3)
+        for d in self.hearts:
+            tau = self.t - d["t0"]
+            if tau <= 0:
+                continue
+            y = d["y0"] - d["v"] * tau - d["v"] * 0.35 * (1 - math.exp(-4 * tau))
+            if y < -self.h * 0.3:
+                continue
+            x = d["x"] + math.sin(tau * d["freq"] * 2 * math.pi * 0.5 + d["phase"]) * d["sway"]
+            scale = d["scale"] * spring(tau, 1.5, 6.0) * (1 + 0.04 * math.sin(tau * 9 + d["phase"]))
+            angle = d["tilt"] + 8 * math.sin(tau * 1.7 + d["phase"])
+            top_fade = smoothstep((y + self.h * 0.1) / (self.h * 0.35))
+            blit(frame, self.sprites[d["layer"]], x, y, scale, d["opacity"] * e * top_fade, angle)
 
 
 # ---------------------------------------------------------------- manager
@@ -751,7 +791,7 @@ def make_effect(name: str, w: int, h: int, seed: int | None = None) -> Effect:
         REACTION_BALLOONS: lambda: BalloonsEffect(w, h),
         REACTION_CONFETTI: lambda: ConfettiEffect(w, h),
         REACTION_LASERS: lambda: LasersEffect(w, h),
-        REACTION_HEARTS: lambda: HeartsEffect(w, h),
+        REACTION_HEARTS: lambda: HeartsEffect(w, h, seed=seed),
     }[name]()
 
 
