@@ -97,7 +97,7 @@ Phone-link cameras and **OBS Virtual Camera** also show up as camera numbers, so
 
 ## 💬 WhatsApp Desktop
 
-WhatsApp's in-call camera menu only lists **Media Foundation** cameras. **OBS Virtual Camera** isn't one, so even when it appears under *Settings → Video & voice*, calls quietly fall back to your real webcam. **DroidCam Video** is a Media Foundation camera, so the video goes through OBS and DroidCam:
+WhatsApp's in-call camera menu only lists **Media Foundation** cameras. **OBS Virtual Camera** isn't one, so even when it appears under *Settings → Video & voice*, it's missing from the call itself (on a typical Windows 11 laptop the call only offers *Integrated Camera* and a *Phone Link* camera) and calls quietly fall back to your real webcam. **DroidCam Video** is a Media Foundation camera that WhatsApp does list, so the video goes through OBS and DroidCam:
 
 ```mermaid
 flowchart LR
@@ -106,28 +106,37 @@ flowchart LR
     C -->|DroidCam Virtual Output| D[WhatsApp<br/>camera: DroidCam Video]
 ```
 
-### One-time setup
-
-1. **Install DroidCam:** the [DroidCam Client for Windows](https://www.dev47apps.com/) and the [DroidCam OBS plugin](https://github.com/dev47apps/droidcam-obs-plugin/releases). Restart the PC.
-2. **Run `run-whatsapp.bat`** and wait until your face shows in the **Gesture Reactions Output** window.
-3. **Open OBS.** If there's a *Video Capture Device* source using your webcam, delete it (it would steal the webcam from the app).
-4. Under **Sources** click **+ → Window Capture → OK**. Set *Window* to **`[python.exe]: Gesture Reactions Output`** and *Capture Method* to **Windows 10 (1903 and up)**, then click **OK**.
-5. Click the new source and press **Ctrl+F** so it fills the picture. OBS remembers this scene.
-
-### Every call
-
-1. **Double-click `run-whatsapp.bat`** (or `run-whatsapp.bat --camera N`). Keep the **Gesture Reactions Output** window open and not minimised; behind other windows is fine.
-2. **Open OBS** and check you see yourself in its preview.
-3. In OBS turn on **Tools → DroidCam Virtual Output**. Don't also click *Start Virtual Camera*.
-4. **Restart WhatsApp:** right-click its tray icon (bottom-right, near the clock) → **Quit**, then open it again. It only reads the camera list when it starts.
-5. In WhatsApp go to **Settings → Video & voice → Camera** and pick **DroidCam Video**.
-6. **Start the call**, click the small arrow next to the camera button and make sure **DroidCam Video** is ticked there too.
-7. Press `1` in the Output window: the other person should see a thumbs-up. Then use your hands.
+Set it up once and follow the same order on every call: see **[DroidCam Client and OBS setup](#-droidcam-client-and-obs-setup)** below.
 
 Never pick your real webcam in WhatsApp: the app is already using it.
 
 > [!NOTE]
 > This works for WhatsApp on a PC. It can't add effects to calls made from the WhatsApp phone app.
+
+## 🔌 DroidCam Client and OBS setup
+
+Only needed for WhatsApp. DroidCam is normally a "phone as webcam" app, but here it's only used for its **DroidCam Video** webcam device, which OBS feeds through the DroidCam plugin. **No phone is needed.**
+
+### One-time setup
+
+1. **Install the DroidCam Client for Windows** from [dev47apps.com](https://www.dev47apps.com/) (the Windows client, not the phone app). It installs the **DroidCam Video** webcam device. You don't need to open it or connect a phone.
+2. **Install the DroidCam OBS plugin:** download the Windows installer from [droidcam-obs-plugin releases](https://github.com/dev47apps/droidcam-obs-plugin/releases) and run it. In OBS 32 or newer, check that **Tools → Plugin Manager** shows **DroidCam** ticked.
+3. **Restart the PC**, so Windows and WhatsApp pick up the new camera.
+4. **Open OBS → Settings → Video** and set **Base (Canvas) Resolution** and **Output (Scaled) Resolution** to **1280x720** and **Common FPS Values** to **30**. Click **OK**.
+5. **Run `run-whatsapp.bat`** and wait until your face shows in the **Gesture Reactions Output** window.
+6. **In OBS, under Sources, click + → Window Capture → OK.** Set *Window* to **`[python.exe]: Gesture Reactions Output`** and *Capture Method* to **Windows 10 (1903 and up)**, then click **OK**.
+7. **Click the new source and press Ctrl+F** (Fit to screen) so it fills the picture. OBS remembers this scene.
+8. **Remove or hide any *Video Capture Device* source** that uses your real webcam (click the eye icon, or select it and press Delete). It would steal the webcam from the app.
+
+### Every call (order matters)
+
+1. **Quit WhatsApp fully:** right-click its tray icon (bottom-right, near the clock) → **Quit**. Closing the window isn't enough; WhatsApp only reads the camera list when it starts.
+2. **Double-click `run-whatsapp.bat`** (or `run-whatsapp.bat --camera N`) and wait for your face in the **Gesture Reactions Output** window. Keep it open and not minimised; behind other windows is fine.
+3. **Open OBS** and check its preview shows you. Turn on **Tools → DroidCam Virtual Output** (it gets a tick). **Don't** click *Start Virtual Camera*. Keep OBS open for the whole call.
+4. **Open WhatsApp and start the call.** Click the small arrow next to the camera button and choose **DroidCam Video**. Also set **Settings → Video & voice → Camera** to **DroidCam Video** so the next call starts with it.
+5. Press `1` in the Output window: the other person should see a thumbs-up. Then use your hands.
+
+If the call shows a green picture or DroidCam Video isn't listed, see *Troubleshooting* below.
 
 ## 🎥 Zoom · Google Meet · Microsoft Teams · Discord
 
