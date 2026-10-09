@@ -868,39 +868,86 @@ class BalloonsEffect(Effect):
 # ---------------------------------------------------------------- confetti
 
 
-class ConfettiEffect(Effect):
-    duration = 4.0
+CONFETTI_COLORS = [  # BGR
+    (70, 70, 255), (40, 190, 255), (70, 220, 100), (255, 170, 40),
+    (230, 90, 220), (60, 230, 255), (255, 120, 120), (180, 110, 255),
+]
 
-    def __init__(self, w, h):
-        super().__init__(w, h)
+
+class ConfettiEffect(Effect):
+    """Paper confetti tumbles down from the top, flipping in 3D as it flutters."""
+
+    duration = 4.6
+    fade_in = 0.0
+    fade_out = 0.6
+
+    def __init__(self, w, h, seed=None):
+        super().__init__(w, h, seed)
+        rng = self.rng
+        n = int(320 * (w * h) / (1280 * 720)) + 40
         self.pieces = []
-        for _ in range(int(w * 0.25)):
-            self.pieces.append([
-                random.uniform(0, w), random.uniform(-h * 1.2, -10),       # x, y
-                random.uniform(-60, 60), random.uniform(0.25, 0.5) * h,    # vx, vy
-                random.uniform(0, 6.28), random.uniform(-8, 8),             # angle, spin
-                random.uniform(0.008, 0.016) * w, random.choice(BRIGHT),    # size, colour
-                random.uniform(0, 6.28),                                    # wobble phase
-            ])
+        for _ in range(n):
+            depth = rng.random()  # 0 far .. 1 near
+            size = h * (0.014 + 0.02 * depth) * rng.uniform(0.85, 1.15)
+            color = np.array(rng.choice(CONFETTI_COLORS), np.float32)
+            self.pieces.append({
+                "x": rng.uniform(-0.05, 1.05) * w,
+                "y": -rng.uniform(0.02, 1.25) * h,
+                "vy": rng.uniform(0.1, 0.3) * h,
+                "term": h * (0.28 + 0.2 * depth) * rng.uniform(0.85, 1.15),
+                "drift": rng.uniform(-0.03, 0.03) * w,
+                "flutter": rng.uniform(0.01, 0.03) * w,
+                "ffreq": rng.uniform(1.2, 2.4),
+                "angle": rng.uniform(0, 2 * math.pi),
+                "spin": rng.uniform(-4, 4),
+                "flip": rng.uniform(0, 2 * math.pi),
+                "fspeed": rng.uniform(5, 11) * rng.choice((-1, 1)),
+                "phase": rng.uniform(0, 2 * math.pi),
+                "w": size * rng.uniform(1.6, 2.2),
+                "h": size,
+                "round": rng.random() < 0.18,
+                "color": color * (0.72 + 0.28 * depth),
+                "x0": 0.0,
+                "depth": depth,
+            })
+        self.pieces.sort(key=lambda p: p["depth"])
 
     def update(self, dt):
         super().update(dt)
+        k = min(1.0, 1.6 * dt)
         for p in self.pieces:
-            p[0] += (p[2] + math.sin(self.t * 3 + p[8]) * 50) * dt
-            p[1] += p[3] * dt
-            p[4] += p[5] * dt
+            p["vy"] += (p["term"] - p["vy"]) * k
+            p["y"] += p["vy"] * dt
+            p["x0"] += p["drift"] * dt
+            p["angle"] += p["spin"] * dt
+            p["flip"] += p["fspeed"] * dt
 
     def draw(self, frame):
-        overlay = frame.copy()
-        for x, y, _, _, ang, _, s, color, _ in self.pieces:
-            if y < -s or y > self.h + s:
+        e = self.envelope
+        target = frame if e >= 0.999 else frame.copy()
+        h = self.h
+        for p in self.pieces:
+            y = p["y"]
+            if y < -h * 0.05 or y > h * 1.05:
                 continue
-            flip = abs(math.cos(ang * 0.7))  # fake 3D tumble
-            rect = ((float(x), float(y)), (float(s * 2), float(max(1.0, s * flip))), math.degrees(ang))
-            box = cv2.boxPoints(rect).astype(np.int32)
-            cv2.fillPoly(overlay, [box], color, cv2.LINE_AA)
-        a = self.envelope
-        cv2.addWeighted(overlay, a, frame, 1 - a, 0, dst=frame)
+            x = p["x"] + p["x0"] + math.sin(self.t * p["ffreq"] * math.pi + p["phase"]) * p["flutter"]
+            c = math.cos(p["flip"])
+            facing = abs(c)
+            # Front catches the light, the back is a touch darker; a glint when face-on.
+            shade = (0.5 + 0.5 * facing) * (1.0 if c >= 0 else 0.82) + 0.25 * facing ** 12
+            color = tuple(float(v) for v in np.minimum(p["color"] * shade, 255))
+            ca, sa = math.cos(p["angle"]), math.sin(p["angle"])
+            hw, hh = p["w"] / 2 * max(facing, 0.08), p["h"] / 2
+            if p["round"]:
+                cv2.ellipse(target, (int(x * 4), int(y * 4)),
+                            (max(1, int(hh * 4 * max(facing, 0.12))), max(1, int(hh * 4))),
+                            math.degrees(p["angle"]), 0, 360, color, -1, cv2.LINE_AA, shift=2)
+                continue
+            pts = np.array([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]], np.float32)
+            pts = pts @ np.array([[ca, sa], [-sa, ca]], np.float32) + (x, y)
+            cv2.fillPoly(target, [(pts * 4).astype(np.int32)], color, cv2.LINE_AA, shift=2)
+        if target is not frame:
+            cv2.addWeighted(target, e, frame, 1 - e, 0, dst=frame)
 
 
 # ---------------------------------------------------------------- lasers
@@ -1000,7 +1047,7 @@ def make_effect(name: str, w: int, h: int, seed: int | None = None) -> Effect:
         REACTION_FIREWORKS: lambda: FireworksEffect(w, h),
         REACTION_RAIN: lambda: RainEffect(w, h),
         REACTION_BALLOONS: lambda: BalloonsEffect(w, h, seed=seed),
-        REACTION_CONFETTI: lambda: ConfettiEffect(w, h),
+        REACTION_CONFETTI: lambda: ConfettiEffect(w, h, seed=seed),
         REACTION_LASERS: lambda: LasersEffect(w, h),
         REACTION_HEARTS: lambda: HeartsEffect(w, h, seed=seed),
     }[name]()
