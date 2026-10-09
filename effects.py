@@ -394,6 +394,38 @@ def heart_sprite(size: int, blur=0.0) -> np.ndarray:
     return cached(("heart", size, blur), build)
 
 
+def balloon_sprite(size: int, color, blur=0.0) -> np.ndarray:
+    """Shiny latex balloon with knot, size = balloon width in px (sprite is taller)."""
+    def build():
+        ss = 2
+        r = size * ss / 2
+        cw, ch = int(r * 2.3), int(r * 3.0)
+        cx, cy = cw / 2, ch * 0.45
+        t = np.linspace(0, 2 * np.pi, 180, endpoint=False)
+        sy = np.sin(t)
+        x = cx + r * np.cos(t) * (1 - 0.13 * np.clip(sy, 0, 1) ** 1.5)
+        y = cy + r * 1.16 * sy
+        mask = np.zeros((ch, cw), np.float32)
+        cv2.fillPoly(mask, [(np.stack([x, y], 1) * 16).astype(np.int32)], 1.0, cv2.LINE_AA, shift=4)
+        knot_y = cy + r * 1.16
+        knot = np.array([[cx - r * 0.13, knot_y + r * 0.17], [cx + r * 0.13, knot_y + r * 0.17],
+                         [cx + r * 0.05, knot_y - r * 0.03], [cx - r * 0.05, knot_y - r * 0.03]])
+        cv2.fillPoly(mask, [(knot * 16).astype(np.int32)], 1.0, cv2.LINE_AA, shift=4)
+        base = np.asarray(color, np.float32) / 255
+        col = np.broadcast_to(base, (ch, cw, 3)).copy()
+        rgb = inflate(mask, col, bevel=1.0, ambient=0.42, diffuse=0.7, specular=0.9,
+                      shininess=45, rim=0.18)
+        # Light passing through the latex: a brighter, saturated glow lower right.
+        through = soft_ellipse(mask.shape, cx + r * 0.3, cy + r * 0.55, r * 0.5, r * 0.4,
+                               0, blur=r * 0.3)
+        rgb = rgb + (through * mask * 0.35)[..., None] * base
+        win = soft_ellipse(mask.shape, cx - r * 0.42, cy - r * 0.5, r * 0.2, r * 0.32, 25,
+                           blur=r * 0.05)
+        rgb = rgb + (win * mask * 0.6)[..., None] * (1 - rgb)
+        return finish_sprite(np.clip(rgb, 0, 1), mask * 0.96, ss, blur=blur)
+    return cached(("balloon", size, tuple(color), blur), build)
+
+
 # -- emoji (vector paths, shaded at load time)
 
 # Thumbs-up artwork from Twemoji (https://github.com/jdecked/twemoji),
@@ -759,47 +791,78 @@ class RainEffect(Effect):
 # ---------------------------------------------------------------- balloons
 
 
+BALLOON_COLORS = [  # BGR
+    (60, 50, 235), (235, 140, 40), (40, 200, 255), (90, 200, 60),
+    (210, 80, 170), (40, 140, 255), (200, 110, 255), (220, 200, 60),
+]
+
+
 class BalloonsEffect(Effect):
-    duration = 4.0
-    fade_out = 0.3
+    """Shiny balloons on swaying strings rise from the bottom, nearer ones bigger and faster."""
 
-    def __init__(self, w, h):
-        super().__init__(w, h)
+    duration = 4.5
+    fade_in = 0.0
+    fade_out = 0.5
+
+    LAYERS = [(0.13, 0.008, 0.36, 5), (0.2, 0.0, 0.48, 7), (0.3, 0.01, 0.62, 3)]
+
+    def __init__(self, w, h, seed=None):
+        super().__init__(w, h, seed)
+        rng = self.rng
         self.balloons = []
-        for i in range(14):
-            r = random.uniform(0.045, 0.075) * w
-            self.balloons.append({
-                "x": random.uniform(0.05, 0.95) * w,
-                "y": h + r * 2 + random.uniform(0, h * 0.8),
-                "r": r,
-                "v": random.uniform(0.35, 0.55) * h,
-                "phase": random.uniform(0, 6.28),
-                "color": random.choice(BRIGHT),
-            })
-
-    def update(self, dt):
-        super().update(dt)
-        for b in self.balloons:
-            b["y"] -= b["v"] * dt
+        colors = BALLOON_COLORS[:]
+        rng.shuffle(colors)
+        k = 0
+        for layer, (s, blur, speed, n) in enumerate(self.LAYERS):
+            size = int(h * s)
+            for i in range(n):
+                color = colors[k % len(colors)]
+                k += 1
+                self.balloons.append({
+                    "layer": layer,
+                    "size": size,
+                    "sprite": balloon_sprite(size, color, blur),
+                    "x": (i + rng.uniform(0.15, 0.85)) / n * w,
+                    "y0": h + size * 0.7,
+                    "t0": rng.uniform(0, 1.3) + (0.25 if layer == 2 else 0),
+                    "v": speed * h * rng.uniform(0.85, 1.1),
+                    "acc": speed * h * 0.15,
+                    "sway": rng.uniform(0.25, 0.45) * size,
+                    "freq": rng.uniform(0.35, 0.6),
+                    "phase": rng.uniform(0, 2 * math.pi),
+                    "string": (200, 200, 205) if layer else (150, 150, 155),
+                })
+        self.balloons.sort(key=lambda b: b["layer"])
 
     def draw(self, frame):
-        overlay = frame.copy()
+        e = self.envelope
         for b in self.balloons:
-            x = b["x"] + math.sin(self.t * 2 + b["phase"]) * b["r"] * 0.4
-            y, r = b["y"], b["r"]
-            # string
-            pts = np.array([[x + math.sin(self.t * 3 + b["phase"] + k * 0.6) * r * 0.15,
-                             y + r * 1.2 + k * r * 0.35] for k in range(8)], np.int32)
-            cv2.polylines(overlay, [pts], False, (220, 220, 220), 2, cv2.LINE_AA)
-            cv2.ellipse(overlay, (int(x), int(y)), (int(r), int(r * 1.2)), 0, 0, 360,
-                        b["color"], -1, cv2.LINE_AA)
-            knot = np.array([[x - r * 0.12, y + r * 1.3], [x + r * 0.12, y + r * 1.3],
-                             [x, y + r * 1.15]], np.int32)
-            cv2.fillPoly(overlay, [knot], b["color"], cv2.LINE_AA)
-            cv2.ellipse(overlay, (int(x - r * 0.35), int(y - r * 0.45)),
-                        (int(r * 0.18), int(r * 0.3)), 30, 0, 360, (255, 255, 255), -1, cv2.LINE_AA)
-        a = 0.92 * self.envelope
-        cv2.addWeighted(overlay, a, frame, 1 - a, 0, dst=frame)
+            tau = self.t - b["t0"]
+            if tau <= 0:
+                continue
+            size = b["size"]
+            y = b["y0"] - b["v"] * tau - 0.5 * b["acc"] * tau * tau
+            if y < -size * 3:
+                continue
+            w = 2 * math.pi * b["freq"]
+            x = b["x"] + math.sin(tau * w + b["phase"]) * b["sway"]
+            vx = math.cos(tau * w + b["phase"]) * b["sway"] * w
+            angle = max(-14.0, min(14.0, vx / size * 22))  # leans into the sway
+            # String hangs from the knot and trails the sway with a lag.
+            r = math.radians(angle)
+            kx = x - math.sin(r) * size * 0.66
+            ky = y + math.cos(r) * size * 0.66
+            pts = []
+            n = 14
+            for j in range(n + 1):
+                f = j / n
+                lag = math.sin((tau - f * 0.45) * w + b["phase"]) - math.sin(tau * w + b["phase"])
+                pts.append((kx - lag * b["sway"] * f * 0.9 + math.sin(f * 7 + tau * 3) * size * 0.04 * f,
+                            ky + f * size * 1.6))
+            cv2.polylines(frame, [(np.array(pts) * 4).astype(np.int32)], False, b["string"],
+                          max(1, int(size / 90)), cv2.LINE_AA, shift=2)
+            off = size * 0.075  # sprite centre sits a little below the balloon's centre
+            blit(frame, b["sprite"], x - math.sin(r) * off, y + math.cos(r) * off, 1.0, e, angle)
 
 
 # ---------------------------------------------------------------- confetti
@@ -936,7 +999,7 @@ def make_effect(name: str, w: int, h: int, seed: int | None = None) -> Effect:
         REACTION_THUMBS_DOWN: lambda: ThumbEffect(w, h, up=False, seed=seed),
         REACTION_FIREWORKS: lambda: FireworksEffect(w, h),
         REACTION_RAIN: lambda: RainEffect(w, h),
-        REACTION_BALLOONS: lambda: BalloonsEffect(w, h),
+        REACTION_BALLOONS: lambda: BalloonsEffect(w, h, seed=seed),
         REACTION_CONFETTI: lambda: ConfettiEffect(w, h),
         REACTION_LASERS: lambda: LasersEffect(w, h),
         REACTION_HEARTS: lambda: HeartsEffect(w, h, seed=seed),
