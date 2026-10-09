@@ -258,6 +258,8 @@ def main():
     detect = make_detector()
     trigger = ReactionTrigger(hold_seconds=args.hold, cooldown_seconds=args.cooldown)
     player = EffectPlayer()
+    print("Preparing effects...")
+    player.preload(w, h)  # build the 3D sprites now, not on the first reaction
     detecting, show_landmarks = True, False
     start = last = time.monotonic()
     last_ts = -1

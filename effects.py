@@ -1,4 +1,13 @@
-"""Animated full-screen reaction effects drawn onto BGR video frames with OpenCV."""
+"""Animated full-screen reaction effects drawn onto BGR video frames with OpenCV.
+
+The look follows Apple's video-call Reactions: glossy 3D sprites, springy
+motion, additive glow and a light colour grade on the scene behind.
+
+Everything that is expensive (3D shading, supersampling, blur) happens once
+when a sprite is first needed and is cached per frame height, so drawing an
+effect only blends small pre-rendered images and a few cheap full-frame passes.
+Call ``EffectPlayer.preload(w, h)`` at startup to build every sprite up front.
+"""
 
 from __future__ import annotations
 
@@ -300,6 +309,111 @@ def heart_polygon(cx, cy, size, angle=0.0):
         pts = pts @ np.array([[c, s], [-s, c]])
     pts += (cx, cy)
     return pts.astype(np.int32)
+
+
+# ---------------------------------------------------------------- sprite shading
+
+_SPRITES: dict[tuple, np.ndarray] = {}
+
+
+def cached(key: tuple, build):
+    """Return the sprite stored under key, building it on first use."""
+    sprite = _SPRITES.get(key)
+    if sprite is None:
+        sprite = _SPRITES[key] = build()
+        _CACHED_IDS.add(id(sprite))
+    return sprite
+
+
+def _norm(v):
+    v = np.asarray(v, np.float32)
+    return v / np.linalg.norm(v)
+
+
+def inflate(mask: np.ndarray, color: np.ndarray, bevel=1.0, ambient=0.45, diffuse=0.7,
+            specular=0.8, shininess=30.0, rim=0.3, light=(-0.45, -0.75, 0.6)) -> np.ndarray:
+    """Shade a flat shape as if it were a puffy 3D object.
+
+    mask: HxW float 0..1. color: HxWx3 float 0..1 (BGR). The shape's distance
+    to its edge becomes a rounded height map (bevel 1 = full dome, smaller =
+    flat top with rounded edges), whose normals are lit with diffuse, specular
+    and rim terms. Returns HxWx3 float BGR.
+    """
+    dist = cv2.distanceTransform((mask > 0.5).astype(np.uint8), cv2.DIST_L2, 5)
+    radius = max(1.0, float(dist.max()) * bevel)
+    t = np.clip(dist / radius, 0, 1)
+    height = np.sqrt(1 - (1 - t) ** 2) * radius
+    height = cv2.GaussianBlur(height, (0, 0), max(1.0, radius * 0.08))
+    gx = cv2.Sobel(height, cv2.CV_32F, 1, 0, ksize=3) / 8
+    gy = cv2.Sobel(height, cv2.CV_32F, 0, 1, ksize=3) / 8
+    nz = 1 / np.sqrt(gx * gx + gy * gy + 1)
+    nx, ny = -gx * nz, -gy * nz
+    lx, ly, lz = _norm(light)
+    hx, hy, hz = _norm((lx, ly, lz + 1))
+    lambert = np.clip(nx * lx + ny * ly + nz * lz, 0, 1)
+    spec = np.clip(nx * hx + ny * hy + nz * hz, 0, 1) ** shininess
+    fresnel = (1 - nz) ** 2
+    shade = (ambient + diffuse * lambert)[..., None]
+    out = color * shade + (specular * spec)[..., None] + (rim * fresnel)[..., None] * (0.5 + color)
+    return np.clip(out, 0, 1)
+
+
+def soft_ellipse(shape, cx, cy, rx, ry, angle=0.0, blur=0.0) -> np.ndarray:
+    """HxW float mask with a filled, optionally feathered ellipse."""
+    m = np.zeros(shape[:2], np.float32)
+    cv2.ellipse(m, (int(cx), int(cy)), (max(1, int(rx)), max(1, int(ry))), angle, 0, 360, 1.0,
+                -1, cv2.LINE_AA)
+    if blur > 0:
+        m = cv2.GaussianBlur(m, (0, 0), blur)
+    return m
+
+
+def finish_sprite(color: np.ndarray, alpha: np.ndarray, ss: int, shadow=0.0,
+                  shadow_offset=0.06, shadow_blur=0.05, blur=0.0, glow=None) -> np.ndarray:
+    """Premultiply, add a soft drop shadow (and optional outer glow), then
+    downsample a supersampled render by ``ss`` into a uint8 BGRA sprite."""
+    h, w = alpha.shape
+    rgb = color * alpha[..., None]
+    a = alpha.copy()
+    if glow is not None:
+        gcolor, gstrength, gsize = glow
+        g = cv2.GaussianBlur(alpha, (0, 0), gsize * h) * gstrength
+        rgb = rgb + np.asarray(gcolor, np.float32) * (g * (1 - a))[..., None]
+        a = a + g * (1 - a)
+    if shadow > 0:
+        dy = int(shadow_offset * h)
+        sh = np.zeros_like(alpha)
+        sh[dy:] = alpha[: h - dy]
+        sh = cv2.GaussianBlur(sh, (0, 0), shadow_blur * h) * shadow
+        a = a + sh * (1 - a)
+    out = np.dstack([rgb, a])
+    if blur > 0:
+        out = cv2.GaussianBlur(out, (0, 0), blur * h)
+    out = cv2.resize(out, (max(1, w // ss), max(1, h // ss)), interpolation=cv2.INTER_AREA)
+    return (np.clip(out, 0, 1) * 255 + 0.5).astype(np.uint8)
+
+
+def glow_dot(size: int, color=(255, 255, 255), falloff=2.5) -> np.ndarray:
+    """BGR light sprite: a soft round glow for additive blending."""
+    def build():
+        r = np.linspace(-1, 1, size, dtype=np.float32)
+        d2 = r[None, :] ** 2 + r[:, None] ** 2
+        v = np.exp(-d2 * falloff * 2) * np.clip(1 - d2, 0, 1)
+        return (v[..., None] * np.asarray(color, np.float32)).clip(0, 255).astype(np.uint8)
+    return cached(("glow", size, tuple(color), falloff), build)
+
+
+def sparkle(size: int, color=(255, 250, 240)) -> np.ndarray:
+    """BGR light sprite: a four-pointed twinkle star with a soft core."""
+    def build():
+        r = np.linspace(-1, 1, size, dtype=np.float32)
+        x, y = r[None, :], r[:, None]
+        d2 = x * x + y * y
+        rays = (np.exp(-(y * y) / 0.0012) * np.clip(1 - np.abs(x), 0, 1) ** 2.5
+                + np.exp(-(x * x) / 0.0012) * np.clip(1 - np.abs(y), 0, 1) ** 2.5)
+        v = rays + np.exp(-d2 / 0.006) + 0.35 * np.exp(-d2 / 0.05)
+        return (np.clip(v, 0, 1)[..., None] * np.asarray(color, np.float32)).astype(np.uint8)
+    return cached(("sparkle", size, tuple(color)), build)
 
 
 # ---------------------------------------------------------------- base effect
@@ -646,6 +760,16 @@ class EffectPlayer:
 
     def __init__(self):
         self.effects: list[Effect] = []
+
+    def preload(self, w: int, h: int):
+        """Build every effect's sprites now, so the first reaction doesn't stutter."""
+        for name in (REACTION_THUMBS_UP, REACTION_THUMBS_DOWN, REACTION_FIREWORKS, REACTION_RAIN,
+                     REACTION_BALLOONS, REACTION_CONFETTI, REACTION_LASERS, REACTION_HEARTS):
+            # Draw one frame too, so OpenCV's code paths are warm before the first real one.
+            fx = make_effect(name, w, h)
+            fx.update(0.5)
+            fx.draw(np.zeros((h, w, 3), np.uint8))
+        _vignette(w, h)
 
     def trigger(self, name: str, w: int, h: int):
         self.effects.append(make_effect(name, w, h))
