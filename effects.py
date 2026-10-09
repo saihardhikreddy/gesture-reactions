@@ -12,8 +12,8 @@ Call ``EffectPlayer.preload(w, h)`` at startup to build every sprite up front.
 from __future__ import annotations
 
 import math
-import os
 import random
+import re
 
 import cv2
 import numpy as np
@@ -235,53 +235,6 @@ def grade(frame: np.ndarray, amount: float, gain=(1.0, 1.0, 1.0), lift=(0, 0, 0)
         cv2.subtract(frame, dark, dst=frame)
 
 
-# ---------------------------------------------------------------- emoji sprites
-
-_EMOJI_FONTS = [
-    r"C:\Windows\Fonts\seguiemj.ttf",  # Windows (Segoe UI Emoji)
-    "/System/Library/Fonts/Apple Color Emoji.ttc",
-    "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
-    "/usr/share/fonts/noto/NotoColorEmoji.ttf",
-]
-_sprite_cache: dict[str, np.ndarray | None] = {}
-
-
-def emoji_sprite(char: str, size: int = 160) -> np.ndarray | None:
-    """Render a colour emoji to a BGRA image, or None if no emoji font exists."""
-    key = f"{char}:{size}"
-    if key in _sprite_cache:
-        return _sprite_cache[key]
-    sprite = None
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-
-        for path in _EMOJI_FONTS:
-            if not os.path.exists(path):
-                continue
-            # Noto Color Emoji only ships a 109px bitmap strike.
-            font_px = 109 if "Noto" in path else size
-            try:
-                font = ImageFont.truetype(path, font_px)
-            except OSError:
-                continue
-            canvas = Image.new("RGBA", (font_px * 2, font_px * 2), (0, 0, 0, 0))
-            ImageDraw.Draw(canvas).text(
-                (font_px // 2, font_px // 3), char, font=font, embedded_color=True
-            )
-            bbox = canvas.getbbox()
-            if not bbox:
-                continue
-            canvas = canvas.crop(bbox).resize((size, size), Image.LANCZOS)
-            rgba = np.array(canvas)
-            sprite = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA)
-            sprite[:, :, :3] = (sprite[:, :, :3].astype(np.float32) * sprite[:, :, 3:4] / 255).astype(np.uint8)
-            break
-    except ImportError:
-        pass
-    _sprite_cache[key] = sprite
-    return sprite
-
-
 def tint(frame: np.ndarray, color, amount: float):
     """Blend the whole frame toward a colour (amount 0..1)."""
     if amount <= 0:
@@ -441,6 +394,178 @@ def heart_sprite(size: int, blur=0.0) -> np.ndarray:
     return cached(("heart", size, blur), build)
 
 
+# -- emoji (vector paths, shaded at load time)
+
+# Thumbs-up artwork from Twemoji (https://github.com/jdecked/twemoji),
+# Copyright Twitter, Inc and other contributors, licensed CC-BY 4.0
+# (https://creativecommons.org/licenses/by/4.0/). Changed here: rendered with
+# 3D shading and a drop shadow; thumbs-down is the same drawing flipped.
+_THUMB_PATHS = [
+    ((94, 219, 255),  # BGR of #FFDB5E
+     "M34.956 17.916c0-.503-.12-.975-.321-1.404-1.341-4.326-7.619-4.01-16.549-4.221-1.493-.035"
+     "-.639-1.798-.115-5.668.341-2.517-1.282-6.382-4.01-6.382-4.498 0-.171 3.548-4.148 12.322"
+     "-2.125 4.688-6.875 2.062-6.875 6.771v10.719c0 1.833.18 3.595 2.758 3.885C8.195 34.219 "
+     "7.633 36 11.238 36h18.044c1.838 0 3.333-1.496 3.333-3.334 0-.762-.267-1.456-.698-2.018 "
+     "1.02-.571 1.72-1.649 1.72-2.899 0-.76-.266-1.454-.696-2.015 1.023-.57 1.725-1.649 "
+     "1.725-2.901 0-.909-.368-1.733-.961-2.336.757-.611 1.251-1.535 1.251-2.581z"),
+    ((71, 149, 238),  # BGR of #EE9547
+     "M23.02 21.249h8.604c1.17 0 2.268-.626 2.866-1.633.246-.415.109-.952-.307-1.199-.415-.247"
+     "-.952-.108-1.199.307-.283.479-.806.775-1.361.775h-8.81c-.873 0-1.583-.71-1.583-1.583s.71"
+     "-1.583 1.583-1.583H28.7c.483 0 .875-.392.875-.875s-.392-.875-.875-.875h-5.888c-1.838 0"
+     "-3.333 1.495-3.333 3.333 0 1.025.475 1.932 1.205 2.544-.615.605-.998 1.445-.998 2.373 0 "
+     "1.028.478 1.938 1.212 2.549-.611.604-.99 1.441-.99 2.367 0 1.12.559 2.108 1.409 2.713"
+     "-.524.589-.852 1.356-.852 2.204 0 1.838 1.495 3.333 3.333 3.333h5.484c1.17 0 2.269-.625 "
+     "2.867-1.632.247-.415.11-.952-.305-1.199-.416-.245-.953-.11-1.199.305-.285.479-.808.776"
+     "-1.363.776h-5.484c-.873 0-1.583-.71-1.583-1.583s.71-1.583 1.583-1.583h6.506c1.17 0 "
+     "2.27-.626 2.867-1.633.247-.416.11-.953-.305-1.199-.419-.251-.954-.11-1.199.305-.289.487"
+     "-.799.777-1.363.777h-7.063c-.873 0-1.583-.711-1.583-1.584s.71-1.583 1.583-1.583h8.091c1.17"
+     " 0 2.269-.625 2.867-1.632.247-.415.11-.952-.305-1.199-.417-.246-.953-.11-1.199.305-.289"
+     ".486-.799.776-1.363.776H23.02c-.873 0-1.583-.71-1.583-1.583s.709-1.584 1.583-1.584z"),
+]
+
+_SVG_TOKEN = re.compile(r"[MmLlHhVvCcSsZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+
+
+def svg_path_polygons(d: str, steps=10) -> list[np.ndarray]:
+    """Flatten an SVG path (M L H V C S Z, absolute and relative) into closed polygons."""
+    tokens = _SVG_TOKEN.findall(d)
+    polys, cur = [], []
+    x = y = sx = sy = 0.0
+    last_ctrl = None
+    cmd = None
+    i = 0
+
+    def num():
+        nonlocal i
+        i += 1
+        return float(tokens[i - 1])
+
+    def cubic(p0, p1, p2, p3):
+        t = np.linspace(0, 1, steps + 1)[1:, None]
+        return ((1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * p1 + 3 * (1 - t) * t ** 2 * p2
+                + t ** 3 * p3)
+
+    while i < len(tokens):
+        if tokens[i].isalpha():
+            cmd = tokens[i]
+            i += 1
+            if cmd in "Zz":
+                if cur:
+                    polys.append(np.array(cur))
+                cur, (x, y) = [], (sx, sy)
+                continue
+        rel = cmd.islower()
+        c = cmd.upper()
+        ox, oy = (x, y) if rel else (0.0, 0.0)
+        if c == "M":
+            if cur:
+                polys.append(np.array(cur))
+            x, y = ox + num(), oy + num()
+            sx, sy = x, y
+            cur = [(x, y)]
+            cmd = "l" if rel else "L"
+            last_ctrl = None
+        elif c == "L":
+            x, y = ox + num(), oy + num()
+            cur.append((x, y))
+            last_ctrl = None
+        elif c == "H":
+            x = (x if rel else 0.0) + num()
+            cur.append((x, y))
+            last_ctrl = None
+        elif c == "V":
+            y = (y if rel else 0.0) + num()
+            cur.append((x, y))
+            last_ctrl = None
+        elif c in "CS":
+            p0 = np.array([x, y])
+            if c == "C":
+                p1 = np.array([ox + num(), oy + num()])
+            else:
+                p1 = 2 * p0 - last_ctrl if last_ctrl is not None else p0
+            p2 = np.array([ox + num(), oy + num()])
+            p3 = np.array([ox + num(), oy + num()])
+            cur.extend(map(tuple, cubic(p0, p1, p2, p3)))
+            last_ctrl = p2
+            x, y = p3
+        else:
+            raise ValueError(f"unsupported SVG path command {cmd!r}")
+    if cur:
+        polys.append(np.array(cur))
+    return polys
+
+
+def thumb_sprite(size: int, up=True) -> np.ndarray:
+    """3D-shaded thumbs up/down emoji, size px square."""
+    def build():
+        ss = 3
+        s = size * ss
+        pad = int(s * 0.12)
+        cw = s + 2 * pad
+        k = s / 36.0
+        color = np.zeros((cw, cw, 3), np.float32)
+        mask = np.zeros((cw, cw), np.float32)
+        for bgr, d in _THUMB_PATHS:
+            polys = []
+            for p in svg_path_polygons(d):
+                if not up:
+                    p = np.stack([p[:, 0], 36 - p[:, 1]], 1)
+                polys.append(((p * k + pad) * 16).astype(np.int32))
+            layer = np.zeros((cw, cw), np.float32)
+            cv2.fillPoly(layer, polys, 1.0, cv2.LINE_AA, shift=4)
+            color = color * (1 - layer[..., None]) + (np.array(bgr, np.float32) / 255) * layer[..., None]
+            mask = np.maximum(mask, layer)
+        # Slight warm-to-amber gradient for depth before lighting.
+        yy = np.linspace(0, 1, cw, dtype=np.float32)[:, None, None]
+        color = color * (1.04 - 0.12 * yy)
+        rgb = inflate(mask, color, bevel=0.28, ambient=0.66, diffuse=0.42, specular=0.45,
+                      shininess=18, rim=0.12)
+        return finish_sprite(rgb, mask, ss, shadow=0.35, shadow_offset=0.035, shadow_blur=0.03)
+    return cached(("thumb", size, up), build)
+
+
+def glass_bubble_sprites(size: int):
+    """(disc mask, gloss overlay, drop shadow) for a frosted-glass bubble size px wide."""
+    def build_mask():
+        ss = 3
+        s = size * ss
+        m = np.zeros((s, s), np.float32)
+        cv2.circle(m, (s // 2 * 16, s // 2 * 16), (s // 2 - ss) * 16, 1.0, -1, cv2.LINE_AA, shift=4)
+        return cv2.resize(m, (size, size), interpolation=cv2.INTER_AREA)
+
+    def build_gloss():
+        ss = 3
+        s = size * ss
+        c = s / 2
+        r = s / 2 - ss
+        yy, xx = np.mgrid[0:s, 0:s].astype(np.float32)
+        d = np.sqrt((xx - c) ** 2 + (yy - c) ** 2) / r
+        inside = np.clip((1 - d) * r / 1.5, 0, 1)
+        # Bright rim, strongest at the top left where the light comes from.
+        ang = np.arctan2(yy - c, xx - c)
+        facing = 0.55 + 0.45 * np.cos(ang + 2.3)
+        rim = np.exp(-((1 - d) * r / (s * 0.012)) ** 2) * inside * (0.35 + 0.65 * facing)
+        # Inner shading at the bottom edge gives the glass some thickness.
+        inner = np.clip((d - 0.75) / 0.25, 0, 1) ** 2 * np.clip((yy - c) / r, 0, 1) * inside
+        # Curved top reflection.
+        top = soft_ellipse((s, s), c, c - r * 0.52, r * 0.62, r * 0.36, 0, blur=s * 0.03)
+        top *= np.clip(1 - (yy - (c - r * 0.85)) / (r * 0.7), 0, 1) ** 1.3 * inside
+        white = np.clip(rim * 0.9 + top * 0.42, 0, 1)
+        shade = inner * 0.18
+        a = np.clip(white + shade, 0, 1)
+        rgb = np.where(a[..., None] > 0, (white / np.maximum(a, 1e-4))[..., None], 0) * np.ones(3)
+        return finish_sprite(rgb.astype(np.float32), a, ss)
+
+    def build_shadow():
+        s = int(size * 1.4)
+        m = soft_ellipse((s, s), s / 2, s / 2, size * 0.46, size * 0.46, 0, blur=size * 0.07)
+        return finish_sprite(np.zeros((s, s, 3), np.float32), m * 0.42, 1)
+
+    return (cached(("bubble_mask", size), build_mask),
+            cached(("bubble_gloss", size), build_gloss),
+            cached(("bubble_shadow", size), build_shadow))
+
+
 # ---------------------------------------------------------------- base effect
 
 
@@ -474,54 +599,77 @@ class Effect:
 
 
 class ThumbEffect(Effect):
-    duration = 2.4
+    """A frosted-glass bubble springs in with a glossy 3D thumb, floats, then pops away."""
 
-    def __init__(self, w, h, up: bool):
-        super().__init__(w, h)
+    duration = 2.8
+    fade_in = 0.0
+    fade_out = 0.45
+
+    def __init__(self, w, h, up: bool, seed=None):
+        super().__init__(w, h, seed)
         self.up = up
-        self.char = "\U0001F44D" if up else "\U0001F44E"
-        size = int(min(w, h) * 0.45)
-        self.sprite = emoji_sprite(self.char, size)
-        self.small = emoji_sprite(self.char, max(24, size // 3))
-        self.size = size
-        self.bubbles = [
-            [random.uniform(0.1, 0.9) * w, h + random.uniform(0, h * 0.6),
-             random.uniform(-40, 40), random.uniform(180, 320) * (h / 720)]
-            for _ in range(10)
-        ]
+        self.size = int(h * 0.46) // 2 * 2
+        self.mask, self.gloss, self.shadow = glass_bubble_sprites(self.size)
+        self.emoji = thumb_sprite(int(self.size * 0.7), up)
+        # Up and to the side of the face, like a speech bubble.
+        self.cx, self.cy = w * 0.5 + min(w * 0.27, h * 0.5), h * 0.38
+        self.star = sparkle(max(8, int(h * 0.12)))
+        rng = self.rng
+        self.glints = [(a + rng.uniform(-0.2, 0.2), rng.uniform(0.62, 0.8), rng.uniform(0.6, 1.0),
+                        rng.uniform(0.0, 0.12))
+                       for a in np.linspace(0, 2 * math.pi, 7, endpoint=False)]
 
-    def update(self, dt):
-        super().update(dt)
-        for b in self.bubbles:
-            b[0] += b[2] * dt
-            b[1] -= b[3] * dt
-
-    def _icon(self, frame, cx, cy, scale, alpha, sprite, size):
-        if sprite is not None:
-            blit(frame, sprite, cx, cy, scale, alpha)
+    def _bubble(self, frame, cx, cy, d, alpha):
+        """Frosted glass: blurred, brightened background inside a disc, plus a gloss rim."""
+        d = int(d) // 2 * 2
+        if d < 6:
             return
-        # Fallback when no emoji font: a coloured badge with +1 / -1.
-        r = int(size * 0.45 * scale)
-        overlay = frame.copy()
-        color = (60, 190, 60) if self.up else (60, 60, 220)
-        cv2.circle(overlay, (int(cx), int(cy)), r, color, -1, cv2.LINE_AA)
-        label = "+1" if self.up else "-1"
-        fs = r / 28
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, fs, max(2, int(fs * 2)))
-        cv2.putText(overlay, label, (int(cx - tw / 2), int(cy + th / 2)),
-                    cv2.FONT_HERSHEY_DUPLEX, fs, (255, 255, 255), max(2, int(fs * 2)), cv2.LINE_AA)
-        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, dst=frame)
+        x0, y0 = int(cx - d / 2), int(cy - d / 2)
+        r = _region(frame.shape, x0, y0, d, d)
+        if r is None:
+            return
+        dst, src = r
+        patch = frame[dst]
+        ph, pw = patch.shape[:2]
+        small = cv2.resize(patch, (max(1, pw // 6), max(1, ph // 6)), interpolation=cv2.INTER_AREA)
+        small = cv2.GaussianBlur(small, (0, 0), 1.6)
+        frosted = cv2.resize(small, (pw, ph), interpolation=cv2.INTER_LINEAR)
+        # Lighten toward a faint tint: 70% blurred scene + 30% tint, as one colour matrix.
+        tint = np.array((255, 244, 238) if self.up else (240, 240, 244), np.float32)
+        frosted = cv2.transform(frosted, np.hstack([np.eye(3, dtype=np.float32) * 0.7, tint[:, None] * 0.3]))
+        m = cv2.resize(self.mask, (d, d), interpolation=cv2.INTER_LINEAR)[src] * alpha
+        frame[dst] = cv2.blendLinear(frosted, patch, np.ascontiguousarray(m), 1 - m)
+        blit(frame, self.gloss, cx, cy, d / self.size, alpha)
 
     def draw(self, frame):
-        e = self.envelope
-        for b in self.bubbles:
-            self._icon(frame, b[0], b[1], 1.0, 0.85 * e, self.small, self.size / 3)
-        # Pop in with a little overshoot, then gently bob.
-        p = min(1.0, self.t / 0.35)
-        pop = 1 + 0.25 * math.sin(p * math.pi) if p < 1 else 1.0
-        bob = math.sin(self.t * 4) * self.h * 0.01
-        self._icon(frame, self.w * 0.5, self.h * 0.45 + bob, pop * max(0.05, p), e,
-                   self.sprite, self.size)
+        t, h = self.t, self.h
+        out = clamp01((t - (self.duration - self.fade_out)) / self.fade_out)
+        alpha = 1 - ease_in_cubic(out) if out > 0 else 1.0
+        exit_scale = 1 + 0.12 * ease_in_cubic(out) if self.up else 1 - 0.15 * ease_in_cubic(out)
+        drift = ease_in_out_sine(t / self.duration)
+        cx = self.cx
+        cy = self.cy - drift * h * 0.05 if self.up else self.cy + drift * h * 0.03
+        cy += math.sin(t * 2.6) * h * 0.006
+
+        bubble = spring(t, 1.7, 5.5) * exit_scale
+        blit(frame, self.shadow, cx, cy + self.size * 0.08 * bubble, bubble, 0.85 * alpha)
+        self._bubble(frame, cx, cy, self.size * bubble, alpha)
+
+        pop = spring(t - 0.08, 1.9, 5.0) * exit_scale
+        if self.up:
+            angle = 16 * math.exp(-3.5 * t) * math.sin(2 * math.pi * 1.6 * t)
+        else:
+            angle = -10 * math.exp(-3.0 * t) * math.sin(2 * math.pi * 2.2 * t)
+        blit(frame, self.emoji, cx, cy, pop, alpha, angle)
+
+        if self.up:  # a quick ring of glints as it lands
+            for a, dist, size, delay in self.glints:
+                p = (t - 0.12 - delay) / 0.55
+                if 0 < p < 1:
+                    rr = self.size * (dist + 0.25 * ease_out_cubic(p))
+                    g = math.sin(math.pi * p) * alpha
+                    add_light(frame, self.star, cx + math.cos(a) * rr, cy + math.sin(a) * rr,
+                              g, size * (0.5 + 0.5 * math.sin(math.pi * p)))
 
 
 # ---------------------------------------------------------------- fireworks
@@ -784,8 +932,8 @@ class HeartsEffect(Effect):
 
 def make_effect(name: str, w: int, h: int, seed: int | None = None) -> Effect:
     return {
-        REACTION_THUMBS_UP: lambda: ThumbEffect(w, h, up=True),
-        REACTION_THUMBS_DOWN: lambda: ThumbEffect(w, h, up=False),
+        REACTION_THUMBS_UP: lambda: ThumbEffect(w, h, up=True, seed=seed),
+        REACTION_THUMBS_DOWN: lambda: ThumbEffect(w, h, up=False, seed=seed),
         REACTION_FIREWORKS: lambda: FireworksEffect(w, h),
         REACTION_RAIN: lambda: RainEffect(w, h),
         REACTION_BALLOONS: lambda: BalloonsEffect(w, h),
