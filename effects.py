@@ -239,14 +239,6 @@ def tint(frame: np.ndarray, color, amount: float):
     cv2.add(frame, tuple(c * amount for c in color) + (0,), dst=frame)
 
 
-def glow(layer: np.ndarray, sigma: float) -> np.ndarray:
-    """Soft blur for light effects, done at quarter size so it stays cheap at 720p+."""
-    h, w = layer.shape[:2]
-    small = cv2.resize(layer, (w // 4, h // 4), interpolation=cv2.INTER_AREA)
-    small = cv2.GaussianBlur(small, (0, 0), max(sigma / 4, 0.8))
-    return cv2.resize(small, (w, h), interpolation=cv2.INTER_LINEAR)
-
-
 # ---------------------------------------------------------------- sprite shading
 
 _SPRITES: dict[tuple, np.ndarray] = {}
@@ -1027,36 +1019,74 @@ class ConfettiEffect(Effect):
 # ---------------------------------------------------------------- lasers
 
 
-class LasersEffect(Effect):
-    duration = 3.6
+LASER_COLORS = [  # BGR
+    (90, 255, 40), (255, 140, 30), (255, 60, 230), (60, 60, 255), (255, 230, 60), (90, 255, 40),
+]
 
-    def __init__(self, w, h):
-        super().__init__(w, h)
+
+class LasersEffect(Effect):
+    """Coloured laser beams sweep up from behind you, glowing in the haze, over a darkened room."""
+
+    duration = 4.2
+    fade_in = 0.35
+    fade_out = 0.8
+
+    def __init__(self, w, h, seed=None):
+        super().__init__(w, h, seed)
+        rng = self.rng
+        self.lw, self.lh = w // 2, h // 2
+        self.flare_size = max(8, int(h * 0.15))  # drawn into the half-size layer
+        for color in LASER_COLORS:
+            glow_dot(self.flare_size, color, 2.2)
         self.beams = []
-        for i in range(8):
-            side = i % 2
-            self.beams.append({
-                "origin": (int(w * (0.02 if side == 0 else 0.98)), int(h * random.uniform(0.85, 1.05))),
-                "color": random.choice([(255, 60, 255), (80, 255, 80), (255, 255, 60),
-                                        (60, 60, 255), (255, 160, 0)]),
-                "speed": random.uniform(1.2, 2.6) * (1 if side else -1),
-                "phase": random.uniform(0, 6.28),
-                "base": -math.pi / 2 + (0.6 if side == 0 else -0.6),
-            })
+        origins = [(0.18, 1.04), (0.38, 1.06), (0.62, 1.06), (0.82, 1.04), (-0.02, 0.95), (1.02, 0.95)]
+        for i, (ox, oy) in enumerate(origins):
+            color = LASER_COLORS[i % len(LASER_COLORS)]
+            for j in range(2 if i < 4 else 1):
+                base = -math.pi / 2 + (ox - 0.5) * 1.2
+                self.beams.append({
+                    "origin": (ox * w, oy * h),
+                    "color": np.array(color, np.float32),
+                    "base": base + (j - 0.5) * 0.5,
+                    "amp": rng.uniform(0.35, 0.6),
+                    "speed": rng.uniform(1.3, 2.3) * rng.choice((-1, 1)),
+                    "phase": rng.uniform(0, 2 * math.pi),
+                    "start": 0.06 * len(self.beams) + rng.uniform(0, 0.05),
+                })
 
     def draw(self, frame):
         e = self.envelope
-        tint(frame, (30, 0, 20), 0.55 * e)
-        layer = np.zeros_like(frame)
-        L = math.hypot(self.w, self.h) * 1.2
+        grade(frame, e, gain=(0.55, 0.42, 0.48), lift=(14, 0, 8), contrast=1.05, desaturate=0.3,
+              vignette=0.5)
+        layer = np.zeros((self.lh, self.lw, 3), np.uint8)
+        sx, sy = self.lw / self.w, self.lh / self.h
+        length = math.hypot(self.lw, self.lh) * 1.3
         for b in self.beams:
-            ang = b["base"] + math.sin(self.t * b["speed"] + b["phase"]) * 0.7
-            ox, oy = b["origin"]
-            end = (int(ox + math.cos(ang) * L), int(oy + math.sin(ang) * L))
-            cv2.line(layer, (ox, oy), end, b["color"], 10, cv2.LINE_AA)
-            cv2.line(layer, (ox, oy), end, (255, 255, 255), 2, cv2.LINE_AA)
-        layer = cv2.add(layer, glow(layer, 9))
-        cv2.addWeighted(frame, 1.0, layer, e, 0, dst=frame)
+            on = smoothstep((self.t - b["start"]) / 0.25)
+            if on <= 0:
+                continue
+            ang = b["base"] + b["amp"] * math.sin(self.t * b["speed"] + b["phase"])
+            flick = 0.88 + 0.12 * math.sin(self.t * 31 + b["phase"] * 7)
+            ox, oy = b["origin"][0] * sx, b["origin"][1] * sy
+            dx, dy = math.cos(ang), math.sin(ang)
+            ex, ey = ox + dx * length, oy + dy * length
+            spread = self.lh * 0.03
+            nx, ny = -dy * spread, dx * spread
+            cone = np.array([[ox, oy], [ex + nx, ey + ny], [ex - nx, ey - ny]], np.float32)
+            col = b["color"] * on * flick
+            cv2.fillPoly(layer, [(cone * 4).astype(np.int32)], tuple(float(c) for c in col * 0.22),
+                         cv2.LINE_AA, shift=2)
+            p0, p1 = (int(ox * 4), int(oy * 4)), (int(ex * 4), int(ey * 4))
+            cv2.line(layer, p0, p1, tuple(float(c) for c in col * 0.8), 3, cv2.LINE_AA, shift=2)
+            core = np.minimum(col * 0.4 + 150 * on * flick, 255)
+            cv2.line(layer, p0, p1, tuple(float(c) for c in core), 1, cv2.LINE_AA, shift=2)
+        light = layer
+        for b in self.beams[::2]:
+            on = smoothstep((self.t - b["start"]) / 0.25)
+            ox, oy = b["origin"][0] * sx, b["origin"][1] * sy
+            add_light(light, glow_dot(self.flare_size, tuple(int(c) for c in b["color"]), 2.2),
+                      ox, oy, 0.7 * on)
+        add_layer(frame, light, gain=e, bloom=1.6, bloom_size=0.016)
 
 
 # ---------------------------------------------------------------- hearts
@@ -1122,7 +1152,7 @@ def make_effect(name: str, w: int, h: int, seed: int | None = None) -> Effect:
         REACTION_RAIN: lambda: RainEffect(w, h),
         REACTION_BALLOONS: lambda: BalloonsEffect(w, h, seed=seed),
         REACTION_CONFETTI: lambda: ConfettiEffect(w, h, seed=seed),
-        REACTION_LASERS: lambda: LasersEffect(w, h),
+        REACTION_LASERS: lambda: LasersEffect(w, h, seed=seed),
         REACTION_HEARTS: lambda: HeartsEffect(w, h, seed=seed),
     }[name]()
 
