@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="Every reaction effect playing in turn" width="640">
+  <img src="docs/demo.gif" alt="Every reaction effect playing in turn" width="640">
 </p>
 
 ---
@@ -38,7 +38,22 @@ Hold a sign up to your webcam for about half a second, with your whole hand in f
 | 🤘🤘 Two rock-on hands | → | **Lasers** 🔦 | `7` |
 | 🫶 Heart hands (index fingertips touch at the top, thumb tips at the bottom) | → | **Hearts** 💖 | `8` |
 
-<p align="center"><img src="assets/effects.png" alt="All eight effects" width="100%"></p>
+The effects are made to feel like Apple's: glossy 3D hearts, balloons and thumbs that spring in with a little overshoot, confetti that flips as it falls, glowing fireworks and lasers over a dimmed room, and a rain cloud that turns everything grey-blue.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/reactions/thumbs_up.gif" alt="Thumbs up" width="100%"><br><b>Thumbs up</b></td>
+    <td align="center"><img src="docs/reactions/thumbs_down.gif" alt="Thumbs down" width="100%"><br><b>Thumbs down</b></td>
+    <td align="center"><img src="docs/reactions/fireworks.gif" alt="Fireworks" width="100%"><br><b>Fireworks</b></td>
+    <td align="center"><img src="docs/reactions/rain.gif" alt="Rain" width="100%"><br><b>Rain</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/reactions/balloons.gif" alt="Balloons" width="100%"><br><b>Balloons</b></td>
+    <td align="center"><img src="docs/reactions/confetti.gif" alt="Confetti" width="100%"><br><b>Confetti</b></td>
+    <td align="center"><img src="docs/reactions/lasers.gif" alt="Lasers" width="100%"><br><b>Lasers</b></td>
+    <td align="center"><img src="docs/reactions/hearts.gif" alt="Hearts" width="100%"><br><b>Hearts</b></td>
+  </tr>
+</table>
 
 ## 🚀 Setup (once)
 
@@ -136,7 +151,7 @@ flowchart LR
 - **Tracking:** Google's MediaPipe Hand Landmarker finds up to two hands per frame and returns 21 points for each.
 - **Recognition:** `gestures.py` turns those points into signs using distances measured relative to hand size, so it works close to or far from the camera, with either hand.
 - **Debounce:** a sign has to be held steadily (75% of frames over 0.45 s) before it fires, then there's a 3 s cooldown, so waving your hands around doesn't set off a show.
-- **Effects:** `effects.py` draws everything with OpenCV and NumPy, with the real Windows emoji font (Segoe UI Emoji) for the thumbs.
+- **Effects:** `effects.py` draws everything with OpenCV and NumPy. Hearts, balloons, the thumbs and the rain cloud are shaded as 3D shapes once at startup and cached, so each frame only blends small images, adds glow at low resolution and applies a quick colour grade. That keeps every effect at a few milliseconds per 720p frame.
 - **Output:** frames go to OBS Virtual Camera through [pyvirtualcam](https://github.com/letmaik/pyvirtualcam), or to an output window for WhatsApp.
 
 Everything runs locally. No video leaves your PC except through your call app.
@@ -239,16 +254,18 @@ Use `run.bat --width 960 --height 540`.
 
 ```powershell
 pip install -r requirements-dev.txt
-pytest                         # gesture rules, tested on synthetic hands
-python scripts/make_demo.py    # regenerate assets/demo.gif and effects.png
+pytest                           # gesture rules on synthetic hands, every effect on blank frames
+python scripts/render_demo.py    # regenerate docs/demo.gif and docs/reactions/*.gif
+python scripts/bench_effects.py  # milliseconds per frame for each effect
 ```
 
 | File | What it does |
 |:--|:--|
 | `gesture_reactions.py` | webcam, hand tracking, virtual camera, windows, keys |
 | `gestures.py` | landmarks → signs → reactions, plus the hold/cooldown trigger |
-| `effects.py` | the eight animated effects |
-| `tests/` | gesture-rule and camera-fallback tests that run without a webcam |
+| `effects.py` | the eight animated effects, their 3D sprites, easing and glow |
+| `tests/` | gesture-rule, effect and camera-fallback tests that run without a webcam |
+| `scripts/` | demo GIF renderer and effect benchmark |
 | `setup.bat` · `update.bat` | create the Python environment · pull the latest version |
 | `run.bat` · `run-whatsapp.bat` | start for Zoom/Meet/Teams · start for WhatsApp |
 
@@ -262,6 +279,8 @@ python scripts/make_demo.py    # regenerate assets/demo.gif and effects.png
 ## 🙏 Credits
 
 Inspired by Apple's Reactions in macOS Sonoma. Built on [MediaPipe](https://ai.google.dev/edge/mediapipe), [OpenCV](https://opencv.org/), [pyvirtualcam](https://github.com/letmaik/pyvirtualcam), [OBS Studio](https://obsproject.com/) and [DroidCam](https://github.com/dev47apps/droidcam-obs-plugin). Not affiliated with Apple, Meta or WhatsApp.
+
+The thumbs-up and thumbs-down are drawn from [Twemoji](https://github.com/jdecked/twemoji) artwork, © Twitter, Inc and other contributors, licensed [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/) (given 3D shading here). Everything else is drawn in code.
 
 ## 📄 License
 
