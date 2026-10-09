@@ -214,13 +214,13 @@ Then start with a number that says `picture OK`, for example `run-whatsapp.bat -
 <details>
 <summary><b>Reactions show in OBS but not in WhatsApp</b></summary>
 
-WhatsApp is still using another camera. In OBS check that *Tools → DroidCam Virtual Output* is on. Then quit WhatsApp from the tray, reopen it, and pick **DroidCam Video** both in *Settings → Video & voice* **and** with the arrow next to the camera button inside the call.
+WhatsApp is still using another camera. In OBS check that *Tools → DroidCam Virtual Output* is ticked. Then quit WhatsApp from the tray, reopen it, and pick **DroidCam Video** both in *Settings → Video & voice* **and** with the arrow next to the camera button inside the call. See [DroidCam Client and OBS setup](#-droidcam-client-and-obs-setup).
 </details>
 
 <details>
 <summary><b>WhatsApp settings list OBS Virtual Camera, but the call doesn't</b></summary>
 
-That's expected. WhatsApp calls only offer Media Foundation cameras (your webcam, DroidCam Video, a Phone Link phone camera), and OBS Virtual Camera is an older DirectShow camera. Use the DroidCam route in [WhatsApp Desktop](#-whatsapp-desktop).
+That's expected. WhatsApp calls only offer Media Foundation cameras (your webcam, DroidCam Video, a Phone Link phone camera), and OBS Virtual Camera is an older DirectShow camera. Use the DroidCam route in [DroidCam Client and OBS setup](#-droidcam-client-and-obs-setup).
 </details>
 
 <details>
@@ -248,9 +248,31 @@ Face a light, keep your whole hand in frame about an arm's length from the camer
 </details>
 
 <details>
+<summary><b>The WhatsApp call shows a green screen</b></summary>
+
+DroidCam Video is selected but gets no picture from OBS. Check that:
+
+- OBS is open (closing it stops the picture);
+- *Tools → DroidCam Virtual Output* is ticked;
+- the OBS preview shows you, not black (if it's black, see *My video only fills a corner* / *Black window* here, and make sure the Output window isn't minimised);
+- *OBS → Settings → Video* has Base and Output resolution at **1280x720** and 30 FPS.
+
+Then turn *Tools → DroidCam Virtual Output* off and on again, and in the call turn the camera off and on.
+</details>
+
+<details>
 <summary><b>DroidCam Video doesn't show up in WhatsApp</b></summary>
 
-Make sure *Tools → DroidCam Virtual Output* is on in OBS, then fully quit and reopen WhatsApp. If it still isn't listed, reinstall the DroidCam plugin and restart. As a last resort, share the Gesture Reactions Output window with WhatsApp's screen-share button.
+- The **DroidCam Client for Windows** isn't installed, or the PC hasn't been restarted since. The client is what adds the DroidCam Video camera; the OBS plugin alone doesn't. Install it from [dev47apps.com](https://www.dev47apps.com/) and restart.
+- WhatsApp wasn't fully quit. Closing the window leaves it running: right-click the tray icon → **Quit**, then open it again.
+
+As a last resort, share the Gesture Reactions Output window with WhatsApp's screen-share button.
+</details>
+
+<details>
+<summary><b>There's no DroidCam Virtual Output in OBS's Tools menu</b></summary>
+
+The DroidCam OBS plugin isn't installed or isn't enabled. Close OBS, run the Windows installer from [droidcam-obs-plugin releases](https://github.com/dev47apps/droidcam-obs-plugin/releases), and reopen OBS. In OBS 32 or newer, check **Tools → Plugin Manager** and tick **DroidCam**, then restart OBS.
 </details>
 
 <details>
