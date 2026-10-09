@@ -60,14 +60,14 @@ The effects are made to feel like Apple's: glossy 3D hearts, balloons and thumbs
 You need Windows 10 or 11 and a webcam.
 
 1. **Install Python 3.12** from [python.org](https://www.python.org/downloads/). On the first installer screen, tick **Add python.exe to PATH**, then click *Install Now*.
-2. **Install [OBS Studio](https://obsproject.com/).** It provides the **OBS Virtual Camera** that call apps pick up. Open it once and accept the defaults.
+2. **Install [OBS Studio](https://obsproject.com/).** It provides the **OBS Virtual Camera** that Zoom, Meet, Teams and Discord pick up (and, with DroidCam, the camera for WhatsApp). Open it once and accept the defaults.
 3. **Download this app:** on this GitHub page click **Code → Download ZIP**, then right-click the ZIP → **Extract All…** (for example to your Desktop).
 4. **Open the extracted `gesture-reactions` folder and double-click `setup.bat`.** It creates a private Python environment and installs everything. Wait for *Setup done*, then press any key.
 
 The first run downloads the 8 MB hand-tracking model, so it takes a little longer.
 
 > [!TIP]
-> For WhatsApp you also need DroidCam; see [WhatsApp Desktop](#-whatsapp-desktop).
+> For WhatsApp you also need the DroidCam Client and its OBS plugin; see [DroidCam Client and OBS setup](#-droidcam-client-and-obs-setup).
 
 ## 🔄 Updating
 
@@ -238,7 +238,7 @@ Those come from MediaPipe when it starts and are harmless. Ignore them.
 <details>
 <summary><b>"Virtual camera unavailable"</b></summary>
 
-This message comes from `run.bat`. Install OBS Studio, and if OBS's own *Start Virtual Camera* is on, stop it: only one program can feed the virtual camera at a time. (`run-whatsapp.bat` doesn't use it directly; there OBS starts the virtual camera itself.)
+This message comes from `run.bat`. Install OBS Studio, and if OBS's own *Start Virtual Camera* is on, stop it: only one program can feed the virtual camera at a time. (`run-whatsapp.bat` doesn't use it: for WhatsApp, OBS sends the picture through *Tools → DroidCam Virtual Output* instead, and *Start Virtual Camera* stays off.)
 </details>
 
 <details>
@@ -278,7 +278,7 @@ The DroidCam OBS plugin isn't installed or isn't enabled. Close OBS, run the Win
 <details>
 <summary><b>Choppy video</b></summary>
 
-Use `run.bat --width 960 --height 540`.
+Use `run.bat --width 960 --height 540` (or `run-whatsapp.bat --width 960 --height 540`). For WhatsApp, leave OBS's own video resolution at 1280x720 and press **Ctrl+F** on the Window Capture source again.
 </details>
 
 ## 🧪 Development
