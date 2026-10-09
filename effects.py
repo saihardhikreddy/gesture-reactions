@@ -29,11 +29,6 @@ from gestures import (
     REACTION_THUMBS_UP,
 )
 
-BRIGHT = [
-    (60, 60, 255), (40, 200, 255), (60, 230, 90), (255, 160, 40),
-    (230, 80, 220), (255, 230, 60), (90, 255, 255), (160, 100, 255),
-]
-
 # ---------------------------------------------------------------- easing
 
 
@@ -707,48 +702,127 @@ class ThumbEffect(Effect):
 # ---------------------------------------------------------------- fireworks
 
 
+FIREWORK_COLORS = [  # (main, accent) BGR
+    ((80, 200, 255), (200, 240, 255)),   # gold
+    ((200, 90, 255), (255, 200, 255)),   # pink
+    ((255, 170, 60), (255, 240, 200)),   # blue
+    ((110, 255, 120), (220, 255, 220)),  # green
+    ((90, 90, 255), (180, 200, 255)),    # red
+    ((255, 110, 200), (255, 220, 240)),  # violet
+]
+
+
 class FireworksEffect(Effect):
-    duration = 3.6
+    """Rockets rise and burst into glowing particles with sparkling trails over a dimmed scene."""
 
-    def __init__(self, w, h):
-        super().__init__(w, h)
-        self.particles = []  # x, y, vx, vy, life, color
-        self.next_burst = 0.0
-        self.trail = np.zeros((h, w, 3), np.uint8)
+    duration = 4.4
+    fade_in = 0.35
+    fade_out = 0.9
 
-    def _burst(self):
-        cx = random.uniform(0.15, 0.85) * self.w
-        cy = random.uniform(0.12, 0.5) * self.h
-        color = random.choice(BRIGHT)
-        speed = random.uniform(0.25, 0.4) * min(self.w, self.h)
-        for i in range(70):
-            a = random.uniform(0, 2 * math.pi)
-            v = speed * random.uniform(0.4, 1.0)
-            self.particles.append([cx, cy, math.cos(a) * v, math.sin(a) * v,
-                                   random.uniform(0.9, 1.4), color])
+    def __init__(self, w, h, seed=None):
+        super().__init__(w, h, seed)
+        rng = self.rng
+        self.lw, self.lh = w // 2, h // 2  # light work happens at half resolution
+        self.trail = np.zeros((self.lh, self.lw, 3), np.uint8)
+        # Light sprites are drawn into the half-size layer, so build them at half size.
+        self.flash_size = max(8, int(h * 0.22))
+        for main, _ in FIREWORK_COLORS:
+            glow_dot(self.flash_size, main, 3.0)
+        self.star = sparkle(max(8, int(h * 0.02)))
+        self.rockets = []
+        t = 0.05
+        for i in range(8):
+            x = rng.uniform(0.15, 0.85) * w
+            self.rockets.append({
+                "t0": t, "fly": rng.uniform(0.45, 0.65),
+                "x0": x + rng.uniform(-0.05, 0.05) * w, "x1": x,
+                "y1": rng.uniform(0.15, 0.42) * h, "burst": False,
+                "colors": rng.choice(FIREWORK_COLORS),
+            })
+            t += rng.uniform(0.22, 0.42)
+        # Particle state as arrays: x, y, vx, vy, age, life, r, g, b, accent
+        self.p = np.zeros((0, 10), np.float32)
+        self.flashes = []
+
+    def _burst(self, x, y, colors):
+        rng = self.rng
+        n = 100
+        speed = rng.uniform(0.7, 0.9) * self.h
+        # Points on a sphere shell seen from the front; skip the poles so the
+        # centre doesn't fill in.
+        z = np.array([rng.uniform(-0.8, 0.8) for _ in range(n)], np.float32)
+        a = np.array([rng.uniform(0, 2 * math.pi) for _ in range(n)], np.float32)
+        s = np.sqrt(1 - z * z) * speed * np.array([rng.uniform(0.92, 1.0) for _ in range(n)])
+        main, accent = np.array(colors[0], np.float32), np.array(colors[1], np.float32)
+        is_acc = np.array([rng.random() < 0.25 for _ in range(n)], np.float32)
+        col = main[None] * (1 - is_acc[:, None]) + accent[None] * is_acc[:, None]
+        life = np.array([rng.uniform(1.2, 1.8) for _ in range(n)], np.float32)
+        new = np.column_stack([np.full(n, x), np.full(n, y), np.cos(a) * s, np.sin(a) * s,
+                               np.zeros(n), life, col, is_acc]).astype(np.float32)
+        self.p = np.vstack([self.p, new])
+        self.flashes.append([x, y, 0.0, colors[0]])
 
     def update(self, dt):
         super().update(dt)
-        if self.t >= self.next_burst and self.t < self.duration - 1.0:
-            self._burst()
-            self.next_burst = self.t + random.uniform(0.18, 0.4)
-        g = 0.25 * self.h
-        for p in self.particles:
-            p[0] += p[2] * dt
-            p[1] += p[3] * dt
-            p[2] *= 0.97
-            p[3] = p[3] * 0.97 + g * dt
-            p[4] -= dt
-        self.particles = [p for p in self.particles if p[4] > 0]
+        for r in self.rockets:
+            if not r["burst"] and self.t >= r["t0"] + r["fly"]:
+                r["burst"] = True
+                self._burst(r["x1"], r["y1"], r["colors"])
+        if len(self.p):
+            p = self.p
+            drag = math.exp(-2.6 * dt)
+            p[:, 2] *= drag
+            p[:, 3] = p[:, 3] * drag + 0.16 * self.h * dt
+            p[:, 0] += p[:, 2] * dt
+            p[:, 1] += p[:, 3] * dt
+            p[:, 4] += dt
+            self.p = p[p[:, 4] < p[:, 5]]
+        for f in self.flashes:
+            f[2] += dt
+        self.flashes = [f for f in self.flashes if f[2] < 0.5]
 
     def draw(self, frame):
-        tint(frame, (20, 10, 0), 0.45 * self.envelope)
-        cv2.multiply(self.trail, (0.82, 0.82, 0.82, 0), dst=self.trail)
-        for x, y, _, _, life, color in self.particles:
-            c = tuple(int(ch * min(1.0, life)) for ch in color)
-            cv2.circle(self.trail, (int(x), int(y)), 3, c, -1, cv2.LINE_AA)
-        cv2.add(frame, glow(self.trail, 4), dst=frame)
-        cv2.add(frame, self.trail, dst=frame)
+        e = self.envelope
+        grade(frame, e, gain=(0.62, 0.55, 0.55), lift=(16, 4, 0), desaturate=0.2, vignette=0.45)
+        cv2.multiply(self.trail, (0.8, 0.8, 0.8, 0), dst=self.trail)
+        sx, sy = self.lw / self.w, self.lh / self.h
+        layer = self.trail
+        for r in self.rockets:  # rising rockets: a bright head with a tapering tail
+            p = (self.t - r["t0"]) / r["fly"]
+            if 0 <= p < 1:
+                pts = []
+                for j in range(7):
+                    q = ease_out_cubic(max(0.0, p - j * 0.025))
+                    pts.append((lerp(r["x0"], r["x1"], q) * sx * 4,
+                                lerp(self.h * 1.02, r["y1"], q) * sy * 4))
+                fade_top = 1 - 0.5 * p
+                for j in range(6):
+                    v = (1 - j / 6) * fade_top
+                    c = tuple(min(255.0, float(ch * v * 0.45 + 40 * v)) for ch in r["colors"][1])
+                    cv2.line(layer, tuple(map(int, pts[j])), tuple(map(int, pts[j + 1])), c,
+                             2 if j < 2 else 1, cv2.LINE_AA, shift=2)
+        rad = max(4, int(self.lh * 0.006 * 4))
+        if len(self.p):
+            p = self.p
+            f = p[:, 4] / p[:, 5]
+            bright = (1 - f) ** 1.3 * 0.8 * np.clip(p[:, 4] / 0.1, 0, 1)  # ignite, don't pop in
+            flicker = np.array([self.rng.random() for _ in range(len(p))], np.float32)
+            bright = np.where(f > 0.55, bright * (0.35 + 0.65 * flicker), bright)  # crackle
+            hot = (45 * bright * (1 - f))[:, None]  # young sparks burn white-hot
+            cols = np.minimum(p[:, 6:9] * bright[:, None] + hot, 255).tolist()
+            pts = (p[:, :2] * (sx * 4, sy * 4)).astype(np.int32).tolist()
+            for (x, y), c in zip(pts, cols):
+                cv2.circle(layer, (x, y), rad, c, -1, cv2.LINE_AA, shift=2)
+        light = layer.copy()
+        for x, y, age, color in self.flashes:  # brief coloured flash lighting the sky
+            add_light(light, glow_dot(self.flash_size, color, 3.0), x * sx, y * sy,
+                      0.45 * math.exp(-age * 10))
+        # A few twinkling stars on top of the oldest sparks.
+        for x, y, _, _, age, life, *_ in self.p[::9]:
+            f = age / life
+            if 0.35 < f < 0.9 and self.rng.random() < 0.5:
+                add_light(light, self.star, x * sx, y * sy, 0.8 * (1 - f))
+        add_layer(frame, light, gain=e, bloom=1.1, bloom_size=0.012)
 
 
 # ---------------------------------------------------------------- rain
@@ -1044,7 +1118,7 @@ def make_effect(name: str, w: int, h: int, seed: int | None = None) -> Effect:
     return {
         REACTION_THUMBS_UP: lambda: ThumbEffect(w, h, up=True, seed=seed),
         REACTION_THUMBS_DOWN: lambda: ThumbEffect(w, h, up=False, seed=seed),
-        REACTION_FIREWORKS: lambda: FireworksEffect(w, h),
+        REACTION_FIREWORKS: lambda: FireworksEffect(w, h, seed=seed),
         REACTION_RAIN: lambda: RainEffect(w, h),
         REACTION_BALLOONS: lambda: BalloonsEffect(w, h, seed=seed),
         REACTION_CONFETTI: lambda: ConfettiEffect(w, h, seed=seed),
