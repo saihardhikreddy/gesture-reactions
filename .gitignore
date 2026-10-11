@@ -1,7 +1,18 @@
 .venv/
 venv/
+env/
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
 hand_landmarker.task
+*.task
 *.mp4
+*.avi
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
