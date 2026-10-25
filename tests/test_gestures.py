@@ -13,7 +13,7 @@ from gestures import (
     PEACE, ROCK, THUMBS_DOWN, THUMBS_UP,
     REACTION_BALLOONS, REACTION_CONFETTI, REACTION_FIREWORKS, REACTION_HEARTS,
     REACTION_LASERS, REACTION_RAIN, REACTION_THUMBS_DOWN, REACTION_THUMBS_UP,
-    ReactionTrigger, classify_frame, classify_hand,
+    ALL_REACTIONS, ReactionTrigger, classify_frame, classify_hand,
 )
 
 
@@ -166,3 +166,11 @@ if __name__ == "__main__":
                 failed += 1
                 print("FAIL", name, e)
     sys.exit(1 if failed else 0)
+
+
+def test_all_reactions_registry_validity():
+    """Verify that all macOS-style reaction triggers are unique and non-empty."""
+    assert len(ALL_REACTIONS) == 8
+    assert len(ALL_REACTIONS) == len(set(ALL_REACTIONS))
+    for r in ALL_REACTIONS:
+        assert isinstance(r, str) and len(r) > 0
