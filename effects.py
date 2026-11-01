@@ -36,7 +36,8 @@ def clamp01(x: float) -> float:
     return 0.0 if x < 0 else 1.0 if x > 1 else x
 
 
-def lerp(a, b, t):
+def lerp(a: float, b: float, t: float) -> float:
+    """Linear interpolation between a and b with normalized weight t."""
     return a + (b - a) * t
 
 
