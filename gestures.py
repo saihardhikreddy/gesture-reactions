@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 from collections import Counter, deque
 from dataclasses import dataclass, field
+from typing import Any, Sequence
 
 WRIST = 0
 THUMB_MCP, THUMB_IP, THUMB_TIP = 2, 3, 4
@@ -61,25 +62,26 @@ ALL_REACTIONS = [
 ]
 
 
-def _xy(p):
+def _xy(p: Any) -> tuple[float, float]:
     """Accept MediaPipe landmark objects or plain (x, y[, z]) tuples."""
     if hasattr(p, "x"):
         return p.x, p.y
     return p[0], p[1]
 
 
-def _dist(a, b):
+def _dist(a: Any, b: Any) -> float:
+    """Euclidean distance between two 2D points in normalized space."""
     ax, ay = _xy(a)
     bx, by = _xy(b)
     return math.hypot(ax - bx, ay - by)
 
 
-def hand_size(lm) -> float:
+def hand_size(lm: Sequence[Any]) -> float:
     """Wrist to middle-finger knuckle: a stable scale for the hand."""
     return max(_dist(lm[WRIST], lm[MIDDLE_MCP]), 1e-6)
 
 
-def finger_extended(lm, finger: str) -> bool:
+def finger_extended(lm: Sequence[Any], finger: str) -> bool:
     """A finger is straight when its tip is clearly farther from the wrist
     than its middle joint, and well away from the palm."""
     mcp, pip, tip = FINGERS[finger]
@@ -89,14 +91,14 @@ def finger_extended(lm, finger: str) -> bool:
     return tip_d > pip_d * 1.12 and _dist(lm[tip], lm[mcp]) > 0.55 * s
 
 
-def finger_folded(lm, finger: str) -> bool:
+def finger_folded(lm: Sequence[Any], finger: str) -> bool:
     """A finger is curled when its tip is no farther from the wrist than its
     middle joint (tip tucked into the palm)."""
     mcp, pip, tip = FINGERS[finger]
     return _dist(lm[tip], lm[WRIST]) < _dist(lm[pip], lm[WRIST]) * 1.05
 
 
-def thumb_extended(lm) -> bool:
+def thumb_extended(lm: Sequence[Any]) -> bool:
     """Thumb sticks out: tip far from the index knuckle and from its own base.
     The second limit is loose because a thumb pointing at the camera looks short."""
     s = hand_size(lm)
@@ -106,8 +108,18 @@ def thumb_extended(lm) -> bool:
     )
 
 
-def classify_hand(lm) -> str | None:
-    """Return the gesture made by a single hand, or None."""
+def classify_hand(lm: Sequence[Any]) -> str | None:
+    """Classify the static gesture made by a single set of 21 MediaPipe hand landmarks.
+
+    Uses palm-scale normalized euclidean distances to achieve distance-invariant
+    classification across varying user camera depths.
+
+    Args:
+        lm: Sequence of 21 MediaPipe NormalizedLandmark objects or (x, y) tuples.
+
+    Returns:
+        One of 'thumbs_up', 'thumbs_down', 'peace', 'rock', or None if unclassified.
+    """
     s = hand_size(lm)
     ext = {f: finger_extended(lm, f) for f in FINGERS}
     fold = {f: finger_folded(lm, f) for f in FINGERS}
@@ -137,7 +149,7 @@ def classify_hand(lm) -> str | None:
     return None
 
 
-def is_heart(lm_a, lm_b) -> bool:
+def is_heart(lm_a: Sequence[Any], lm_b: Sequence[Any]) -> bool:
     """Two hands forming a heart: thumb tips touch at the bottom, index tips
     touch at the top, with an opening in between."""
     s = (hand_size(lm_a) + hand_size(lm_b)) / 2
@@ -155,8 +167,18 @@ def is_heart(lm_a, lm_b) -> bool:
     return thumb_y - index_y > 0.5 * s
 
 
-def classify_frame(hands: list) -> str | None:
-    """Map the hands in one frame to a reaction name (or None)."""
+def classify_frame(hands: Sequence[Sequence[Any]]) -> str | None:
+    """Map detected hands in a video frame to an interactive macOS-style reaction name.
+
+    Evaluates cooperative dual-hand gestures (e.g., hearts, fireworks, rain, lasers, confetti)
+    before falling back to isolated single-hand triggers (balloons, thumbs up, thumbs down).
+
+    Args:
+        hands: Sequence of hands detected in the frame, each having 21 landmarks.
+
+    Returns:
+        Reaction name string (matching ALL_REACTIONS) or None if no reaction triggered.
+    """
     if len(hands) >= 2 and is_heart(hands[0], hands[1]):
         return REACTION_HEARTS
 
