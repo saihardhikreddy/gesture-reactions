@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 np = pytest.importorskip("numpy")
 pytest.importorskip("cv2")
 
-from gesture_reactions import backend_order, is_black, warm_up  # noqa: E402
+from gesture_reactions import backend_order, ensure_model, is_black, warm_up  # noqa: E402
 
 
 def frame(value, h=72, w=128):
@@ -127,3 +127,28 @@ def test_open_camera_nothing_opens_exits(fake_windows_camera):
     FakeVideoCapture.feeds = {}
     with pytest.raises(SystemExit):
         fake_windows_camera.open_camera("0", 1280, 720, 30)
+
+
+def test_model_download_is_atomic(tmp_path, monkeypatch):
+    import gesture_reactions
+
+    path = str(tmp_path / "hand_landmarker.task")
+
+    def cut_off(url, dest):
+        with open(dest, "wb") as f:
+            f.write(b"half a model")
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(gesture_reactions.urllib.request, "urlretrieve", cut_off)
+    with pytest.raises(OSError):
+        ensure_model(path, "https://example.invalid/model")
+    assert os.listdir(tmp_path) == []  # nothing half-written left behind
+
+    def ok(url, dest):
+        with open(dest, "wb") as f:
+            f.write(b"model")
+
+    monkeypatch.setattr(gesture_reactions.urllib.request, "urlretrieve", ok)
+    assert ensure_model(path, "https://example.invalid/model") == path
+    assert open(path, "rb").read() == b"model"
+    assert os.listdir(tmp_path) == ["hand_landmarker.task"]

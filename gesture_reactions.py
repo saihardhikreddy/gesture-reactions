@@ -67,11 +67,19 @@ HAND_CONNECTIONS = [
 ]
 
 
-def ensure_model() -> str:
-    if not os.path.exists(MODEL_PATH):
+def ensure_model(path: str = MODEL_PATH, url: str = MODEL_URL) -> str:
+    """Download the hand model once. It goes to a temporary file first, so a
+    download cut off halfway can't leave a broken model that fails every run."""
+    if not os.path.exists(path):
         print("Downloading hand tracking model (~8 MB)...")
-        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-    return MODEL_PATH
+        partial = path + ".part"
+        try:
+            urllib.request.urlretrieve(url, partial)
+            os.replace(partial, path)
+        finally:
+            if os.path.exists(partial):
+                os.remove(partial)
+    return path
 
 
 def make_detector():

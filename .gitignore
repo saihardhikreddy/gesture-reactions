@@ -16,3 +16,4 @@ hand_landmarker.task
 .DS_Store
 Thumbs.db
 
+*.task.part
