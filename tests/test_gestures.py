@@ -111,6 +111,22 @@ def test_two_hand_reactions():
     assert classify_frame([]) is None
 
 
+def test_two_hand_reactions_ignore_order_and_position():
+    L, R = {"cx": 0.3}, {"cx": 0.7}
+    peace_l, peace_r = make_hand("im", **L), make_hand("im", **R)
+    assert classify_frame([peace_r, peace_l]) == REACTION_CONFETTI
+    rock_l, rock_r = make_hand("ip", cx=0.25, cy=0.4), make_hand("ip", cx=0.75, cy=0.8)
+    assert classify_frame([rock_r, rock_l]) == REACTION_LASERS
+    for cx, cy in ((0.2, 0.3), (0.5, 0.5), (0.8, 0.7)):
+        assert classify_hand(make_hand("im", cx=cx, cy=cy)) == PEACE
+
+
+def test_only_first_two_hands_count():
+    L, R = {"cx": 0.3}, {"cx": 0.7}
+    extra = make_hand("ip", cx=0.5)
+    assert classify_frame([make_hand("im", **L), make_hand("im", **R), extra]) == REACTION_CONFETTI
+
+
 def heart_hands():
     """Two hands meeting: index tips touching above, thumb tips touching below."""
     def hand(sign):
