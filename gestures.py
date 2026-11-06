@@ -217,7 +217,10 @@ class ReactionTrigger:
 
     def update(self, reaction: str | None, now: float) -> str | None:
         self._history.append((now, reaction))
-        while self._history and now - self._history[0][0] > self.hold_seconds:
+        # Drop frames that are older than the window, but keep the last one
+        # before it: at a low frame rate (3 fps or less with the default hold)
+        # trimming every old frame would leave too short a span to ever fire.
+        while len(self._history) > 1 and now - self._history[1][0] >= self.hold_seconds:
             self._history.popleft()
 
         if reaction is None or now - self._last_fire < self.cooldown_seconds:

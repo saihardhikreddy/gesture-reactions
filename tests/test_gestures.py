@@ -170,6 +170,16 @@ def test_trigger_needs_hold_and_cooldown():
     assert all(trig2.update(None, t / 30) is None for t in range(1, 30))
 
 
+
+def test_trigger_fires_at_low_frame_rates():
+    # A slow laptop may only run detection 2-3 times a second.
+    for fps in (2, 3):
+        trig = ReactionTrigger()
+        fired = [trig.update("thumbs_up", t / fps) for t in range(fps * 2)]
+        assert fired.count("thumbs_up") == 1, fps
+        assert fired.index("thumbs_up") >= 1, fps  # still needs the hold
+
+
 if __name__ == "__main__":
     import sys
     failed = 0
