@@ -222,12 +222,22 @@ def draw_landmarks(frame, hands):
             cv2.circle(frame, p, 3, (0, 0, 255), -1, cv2.LINE_AA)
 
 
-def main():
+def positive(kind):
+    """argparse type: a number above zero (a zero or negative hold, cooldown or size makes no sense)."""
+    def parse(text):
+        value = kind(text)
+        if value <= 0:
+            raise argparse.ArgumentTypeError(f"must be above 0, got {text}")
+        return value
+    return parse
+
+
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description="macOS-style gesture reactions for any video call app.")
     ap.add_argument("--camera", default="0", help="webcam index (0, 1, ...) or a video file path")
-    ap.add_argument("--width", type=int, default=1280)
-    ap.add_argument("--height", type=int, default=720)
-    ap.add_argument("--fps", type=int, default=30)
+    ap.add_argument("--width", type=positive(int), default=1280)
+    ap.add_argument("--height", type=positive(int), default=720)
+    ap.add_argument("--fps", type=positive(int), default=30)
     ap.add_argument("--backend", choices=["auto", "msmf", "dshow"], default="auto",
                     help="camera API; auto tries Media Foundation, then DirectShow, skipping black ones")
     ap.add_argument("--list-cameras", action="store_true",
@@ -236,11 +246,19 @@ def main():
     ap.add_argument("--no-preview", action="store_true", help="don't open a preview window")
     ap.add_argument("--whatsapp", action="store_true",
                     help="skip the virtual camera and show an unmirrored output window for OBS to capture")
-    ap.add_argument("--hold", type=float, default=0.45, help="seconds a gesture must be held")
-    ap.add_argument("--cooldown", type=float, default=3.0, help="seconds between reactions")
-    args = ap.parse_args()
+    ap.add_argument("--hold", type=positive(float), default=0.45, help="seconds a gesture must be held")
+    ap.add_argument("--cooldown", type=positive(float), default=3.0, help="seconds between reactions")
+    args = ap.parse_args(argv)
     if args.whatsapp:
         args.no_virtual_cam = True
+    if args.no_virtual_cam and args.no_preview and not args.whatsapp and not args.list_cameras:
+        # Nothing would be shown or sent anywhere, and with no window there is no 'q' to quit.
+        ap.error("--no-virtual-cam and --no-preview together leave nothing to show; drop one of them")
+    return args
+
+
+def main():
+    args = parse_args()
     if args.list_cameras:
         list_cameras(args.width, args.height, args.fps, args.backend)
         return

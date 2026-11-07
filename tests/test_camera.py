@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 np = pytest.importorskip("numpy")
 pytest.importorskip("cv2")
 
-from gesture_reactions import backend_order, ensure_model, is_black, warm_up  # noqa: E402
+from gesture_reactions import backend_order, ensure_model, is_black, parse_args, warm_up  # noqa: E402
 
 
 def frame(value, h=72, w=128):
@@ -152,3 +152,12 @@ def test_model_download_is_atomic(tmp_path, monkeypatch):
     assert ensure_model(path, "https://example.invalid/model") == path
     assert open(path, "rb").read() == b"model"
     assert os.listdir(tmp_path) == ["hand_landmarker.task"]
+
+
+def test_args_reject_nonsense_values():
+    assert parse_args(["--hold", "0.3"]).hold == 0.3
+    for bad in (["--hold", "0"], ["--cooldown", "-1"], ["--fps", "0"], ["--no-virtual-cam", "--no-preview"]):
+        with pytest.raises(SystemExit):
+            parse_args(bad)
+    # still fine: WhatsApp mode has its own output window
+    assert parse_args(["--whatsapp", "--no-preview"]).no_virtual_cam
