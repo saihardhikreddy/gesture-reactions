@@ -215,6 +215,11 @@ class ReactionTrigger:
     _history: deque = field(default_factory=deque)
     _last_fire: float = -1e9
 
+    def reset(self) -> None:
+        """Forget the frames seen so far (e.g. after detection was paused), so a
+        gesture has to be held for the full window again before it fires."""
+        self._history.clear()
+
     def update(self, reaction: str | None, now: float) -> str | None:
         self._history.append((now, reaction))
         # Drop frames that are older than the window, but keep the last one

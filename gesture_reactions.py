@@ -340,6 +340,9 @@ def main():
                 break
             if key == ord("g"):
                 detecting = not detecting
+                # Frames from before the pause would otherwise count towards the
+                # hold, so the held gesture would fire on the first frame back.
+                trigger.reset()
             elif key == ord("l"):
                 show_landmarks = not show_landmarks
             elif key in REACTION_KEYS:

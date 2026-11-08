@@ -180,6 +180,17 @@ def test_trigger_fires_at_low_frame_rates():
         assert fired.index("thumbs_up") >= 1, fps  # still needs the hold
 
 
+def test_trigger_reset_needs_a_fresh_hold():
+    # Gesture held for a moment, then detection paused for 10 s (the 'g' key).
+    trig = ReactionTrigger(hold_seconds=0.45)
+    assert trig.update("peace", 0.0) is None
+    trig.reset()
+    # Back from the pause, still holding: it must not fire on the first frames.
+    fired = [trig.update("peace", 10 + t / 30) for t in range(30)]
+    assert fired.count("peace") == 1
+    assert fired.index("peace") >= 10
+
+
 if __name__ == "__main__":
     import sys
     failed = 0
