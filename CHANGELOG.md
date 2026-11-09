@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-09
+
+Fixes and checks since the October release (from the commit history):
+
+- Reactions now fire on slow laptops too. At about 3 fps or less, the hold check used to throw away the frames it needed, so nothing ever fired.
+- Pausing with `g` and resuming no longer fires a reaction straight away for a gesture you were holding when you paused. The hold starts over.
+- Settings that can't work are refused at startup with a clear message: a zero or negative `--hold`, `--cooldown`, `--fps`, `--width` or `--height`, and `--no-virtual-cam --no-preview` without `--whatsapp` (no output, and no window to quit from).
+- The hand model downloads to a temporary file first, so an interrupted download no longer leaves a broken model that fails on every start.
+- New tests: two-hand reactions ignore which hand is which, where they are and any extra hands. CI also lints every push with ruff.
+
 ## 2026-10-09
 
 - All eight reactions redrawn to look like Apple's: glossy 3D hearts, balloons and thumbs, springy pop-in motion, soft shadows, glow and bloom, and a colour grade on the room for fireworks, lasers, hearts and rain.
