@@ -49,6 +49,7 @@ OUTPUT_WINDOW = "Gesture Reactions Output"
 BACKENDS = {"msmf": cv2.CAP_MSMF, "dshow": cv2.CAP_DSHOW}
 BLACK_MEAN = 3.0       # a frame darker than this on average counts as black
 WARMUP_SECONDS = 1.5   # how long a camera gets to deliver a non-black frame
+READ_GRACE_SECONDS = 2.0  # how long the camera may stop delivering frames before we give up
 WHATSAPP_STEPS = """\
 WhatsApp mode: the "Gesture Reactions Output" window is what the other person sees.
   1. Keep that window open (not minimised). Quit WhatsApp from the tray first if it's running.
@@ -133,6 +134,20 @@ def warm_up(cap, seconds: float | None = None):
         else:
             time.sleep(0.05)
     return frame
+
+
+def read_frame(cap, seconds: float = READ_GRACE_SECONDS):
+    """The next frame, or None once the camera has failed for this long. One failed read
+    used to end the program without a word, though webcams drop single frames (USB hiccups,
+    another app grabbing the camera for a moment) and recover."""
+    deadline = time.monotonic() + seconds
+    while True:
+        ok, frame = cap.read()
+        if ok and frame is not None:
+            return frame
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.02)
 
 
 def try_backend(index: int, api: int, width: int, height: int, fps: int, seconds: float | None = None):
@@ -264,6 +279,7 @@ def main():
         return
 
     cap, frame = open_camera(args.camera, args.width, args.height, args.fps, args.backend)
+    is_webcam = args.camera.isdigit()
     h, w = frame.shape[:2]
     print(f"Camera: {w}x{h}")
     if args.whatsapp:
@@ -295,9 +311,12 @@ def main():
 
     try:
         while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
+            frame = read_frame(cap, READ_GRACE_SECONDS if is_webcam else 0.0)
+            if frame is None:
+                if is_webcam:
+                    print(f"The camera stopped sending frames for {READ_GRACE_SECONDS:.0f} seconds; "
+                          "stopping. Is another app using it, or was it unplugged?")
+                break  # a video file simply ended
             now = time.monotonic()
             dt, last = now - last, now
 

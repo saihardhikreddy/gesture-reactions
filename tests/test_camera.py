@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 np = pytest.importorskip("numpy")
 pytest.importorskip("cv2")
 
-from gesture_reactions import backend_order, ensure_model, is_black, parse_args, warm_up  # noqa: E402
+from gesture_reactions import backend_order, ensure_model, is_black, parse_args, read_frame, warm_up  # noqa: E402
 
 
 def frame(value, h=72, w=128):
@@ -59,6 +59,32 @@ def test_warm_up_gives_up_on_black_camera():
     cap = FakeCap([frame(0)] * 3)
     assert is_black(warm_up(cap, seconds=0.2))
     assert warm_up(FakeCap([]), seconds=0.1) is None
+
+
+class FlakyCap:
+    """Fails the reads listed in drop (by read number), returns a frame otherwise."""
+    def __init__(self, drop=(), stop_after=None):
+        self.n, self.drop, self.stop_after = 0, set(drop), stop_after
+
+    def read(self):
+        self.n += 1
+        if self.n in self.drop or (self.stop_after is not None and self.n > self.stop_after):
+            return False, None
+        return True, frame(100)
+
+
+def test_read_frame_rides_out_dropped_frames():
+    cap = FlakyCap(drop={1, 2, 3})
+    assert read_frame(cap, seconds=1.0) is not None
+    assert cap.n == 4
+
+
+def test_read_frame_gives_up_on_a_dead_camera():
+    import time
+    cap = FlakyCap(stop_after=0)
+    t0 = time.monotonic()
+    assert read_frame(cap, seconds=0.15) is None
+    assert 0.15 <= time.monotonic() - t0 < 1.0 and cap.n > 1
 
 
 def test_backend_order():
