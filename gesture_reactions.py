@@ -227,6 +227,19 @@ def list_cameras(width: int, height: int, fps: int, backend: str = "auto", max_i
     print("Use the index with 'picture OK', e.g. --camera 0 (add --backend msmf/dshow to force one).")
 
 
+def next_reaction(trigger: ReactionTrigger, hands_reaction: str | None, screen_busy: bool, now: float):
+    """The reaction to start this frame, if any.
+
+    Reactions don't stack, so nothing new is looked for while an effect is on screen.
+    The trigger also forgets what it had seen: otherwise a gesture shown before an
+    effect started (one fired with the 1-8 keys, say) would still count once the
+    screen clears, and could fire on the very first frame after it."""
+    if screen_busy:
+        trigger.reset()
+        return None
+    return trigger.update(hands_reaction, now)
+
+
 def draw_landmarks(frame, hands):
     h, w = frame.shape[:2]
     for lm in hands:
@@ -325,8 +338,7 @@ def main():
                 ts = max(int((now - start) * 1000), last_ts + 1)  # must strictly increase
                 last_ts = ts
                 hands = detect(frame, ts)
-                # Don't stack reactions: only look for a new one when the screen is clear.
-                reaction = trigger.update(classify_frame(hands), now) if not player.busy else None
+                reaction = next_reaction(trigger, classify_frame(hands), player.busy, now)
                 if reaction:
                     player.trigger(reaction, w, h)
                     banner, banner_until = reaction.replace("_", " "), now + 1.5

@@ -13,7 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 np = pytest.importorskip("numpy")
 pytest.importorskip("cv2")
 
-from gesture_reactions import backend_order, ensure_model, is_black, parse_args, read_frame, warm_up  # noqa: E402
+from gesture_reactions import (  # noqa: E402
+    backend_order, ensure_model, is_black, next_reaction, parse_args, read_frame, warm_up,
+)
+from gestures import ReactionTrigger  # noqa: E402
 
 
 def frame(value, h=72, w=128):
@@ -187,3 +190,21 @@ def test_args_reject_nonsense_values():
             parse_args(bad)
     # still fine: WhatsApp mode has its own output window
     assert parse_args(["--whatsapp", "--no-preview"]).no_virtual_cam
+
+
+def test_gesture_shown_before_an_effect_needs_a_fresh_hold_after_it():
+    trig = ReactionTrigger(hold_seconds=0.45, cooldown_seconds=3.0)
+    # Peace held for 0.3 s (not long enough), then a reaction is fired with a key.
+    assert all(next_reaction(trig, "peace", False, t / 30) is None for t in range(10))
+    # The key-fired effect plays for 2.8 s while the hand stays up.
+    assert all(next_reaction(trig, "peace", True, 0.33 + t / 30) is None for t in range(84))
+    # Screen clear again: the first frame back must not fire on the old frames.
+    fired = [next_reaction(trig, "peace", False, 3.2 + t / 30) for t in range(30)]
+    assert fired[0] is None
+    assert fired.count("peace") == 1
+    assert fired.index("peace") >= 10
+
+
+def test_nothing_fires_while_the_screen_is_busy():
+    trig = ReactionTrigger(hold_seconds=0.45, cooldown_seconds=0.1)
+    assert all(next_reaction(trig, "thumbs_up", True, t / 30) is None for t in range(60))
