@@ -74,6 +74,21 @@ def test_player_triggers_and_clears():
     assert not player.busy
 
 
+def test_repeated_trigger_does_not_stack_copies():
+    player = EffectPlayer()
+    assert player.trigger("hearts", W, H)
+    for _ in range(5):  # a key held down or pressed again and again
+        assert not player.trigger("hearts", W, H)
+    assert len(player.effects) == 1 and player.playing == {"hearts"}
+    # A different reaction can still join, and the same one can play again once it is over.
+    assert player.trigger("confetti", W, H)
+    for _ in range(10 * FPS):
+        player.render(np.zeros((H, W, 3), np.uint8), 1 / FPS)
+        if not player.busy:
+            break
+    assert player.trigger("hearts", W, H)
+
+
 def test_blit_clips_at_every_edge():
     sprite = effects.heart_sprite(60)
     for cx, cy in [(-20, -20), (W + 20, H + 20), (-500, 50), (W / 2, H + 500), (W / 2, H / 2)]:

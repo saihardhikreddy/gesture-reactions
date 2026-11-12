@@ -1260,8 +1260,21 @@ class EffectPlayer:
             fx.draw(np.zeros((h, w, 3), np.uint8))
         _vignette(w, h)
 
-    def trigger(self, name: str, w: int, h: int):
-        self.effects.append(make_effect(name, w, h))
+    def trigger(self, name: str, w: int, h: int) -> bool:
+        """Start a reaction. Returns False if the same one is already playing: holding or
+        mashing a key (1-8) used to stack a copy per press, each drawing every frame, so
+        a few presses slowed the video to a crawl."""
+        if name in self.playing:
+            return False
+        fx = make_effect(name, w, h)
+        fx.reaction = name
+        self.effects.append(fx)
+        return True
+
+    @property
+    def playing(self) -> set:
+        """Names of the reactions on screen now."""
+        return {getattr(fx, "reaction", None) for fx in self.effects} - {None}
 
     @property
     def busy(self) -> bool:
