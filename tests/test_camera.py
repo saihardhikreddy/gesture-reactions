@@ -14,7 +14,7 @@ np = pytest.importorskip("numpy")
 pytest.importorskip("cv2")
 
 from gesture_reactions import (  # noqa: E402
-    backend_order, ensure_model, is_black, next_reaction, parse_args, read_frame, warm_up,
+    backend_order, ensure_model, require_model, is_black, next_reaction, parse_args, read_frame, warm_up,
 )
 from gestures import ReactionTrigger  # noqa: E402
 
@@ -181,6 +181,29 @@ def test_model_download_is_atomic(tmp_path, monkeypatch):
     assert ensure_model(path, "https://example.invalid/model") == path
     assert open(path, "rb").read() == b"model"
     assert os.listdir(tmp_path) == ["hand_landmarker.task"]
+
+
+def test_failed_model_download_explains_what_to_do(tmp_path, monkeypatch):
+    import urllib.error
+
+    import gesture_reactions
+
+    path = str(tmp_path / "hand_landmarker.task")
+
+    def offline(url, dest):
+        raise urllib.error.URLError("getaddrinfo failed")
+
+    monkeypatch.setattr(gesture_reactions.urllib.request, "urlretrieve", offline)
+    with pytest.raises(SystemExit) as exit_info:
+        require_model(path, "https://example.invalid/model")
+    message = str(exit_info.value.code)
+    assert "Could not download the hand tracking model" in message
+    assert "https://example.invalid/model" in message and path in message
+    assert os.listdir(tmp_path) == []
+
+    with open(path, "wb") as f:  # already downloaded: no network needed
+        f.write(b"model")
+    assert require_model(path, "https://example.invalid/model") == path
 
 
 def test_args_reject_nonsense_values():

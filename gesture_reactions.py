@@ -83,6 +83,20 @@ def ensure_model(path: str = MODEL_PATH, url: str = MODEL_URL) -> str:
     return path
 
 
+def require_model(path: str = MODEL_PATH, url: str = MODEL_URL) -> str:
+    """ensure_model(), but a failed download ends the run with a short message saying what
+    to do, instead of a urllib traceback. main() calls it before opening the camera, so an
+    offline first run no longer starts the webcam and virtual camera only to crash."""
+    try:
+        return ensure_model(path, url)
+    except OSError as e:  # URLError, HTTPError, timeouts and disk errors are all OSErrors
+        sys.exit(
+            f"Could not download the hand tracking model ({e}).\n"
+            f"Check your internet connection and run again, or download\n  {url}\n"
+            f"yourself and save it as\n  {path}"
+        )
+
+
 def make_detector():
     import mediapipe as mp
     from mediapipe.tasks.python import BaseOptions, vision
@@ -291,6 +305,7 @@ def main():
         list_cameras(args.width, args.height, args.fps, args.backend)
         return
 
+    require_model()
     cap, frame = open_camera(args.camera, args.width, args.height, args.fps, args.backend)
     is_webcam = args.camera.isdigit()
     h, w = frame.shape[:2]
