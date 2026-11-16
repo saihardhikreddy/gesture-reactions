@@ -157,6 +157,15 @@ def test_heart():
     assert classify_frame([a, b]) != REACTION_HEARTS
 
 
+def test_one_hand_reported_twice_is_not_a_heart():
+    # MediaPipe sometimes returns the same hand twice. Every tip of the copy touches the
+    # original, and in a raised hand the thumb is below the index, which passed as a heart.
+    hand = make_hand("imrp")
+    nudged = [(x + 0.002, y + 0.002) + tuple(rest) for x, y, *rest in hand]
+    assert classify_frame([hand, list(hand)]) != REACTION_HEARTS
+    assert classify_frame([hand, nudged]) != REACTION_HEARTS
+
+
 def test_trigger_needs_hold_and_cooldown():
     trig = ReactionTrigger(hold_seconds=0.5, cooldown_seconds=3.0)
     fired = [trig.update("hearts", t / 30) for t in range(0, 30)]

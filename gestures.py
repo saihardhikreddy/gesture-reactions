@@ -153,6 +153,11 @@ def is_heart(lm_a: Sequence[Any], lm_b: Sequence[Any]) -> bool:
     """Two hands forming a heart: thumb tips touch at the bottom, index tips
     touch at the top, with an opening in between."""
     s = (hand_size(lm_a) + hand_size(lm_b)) / 2
+    # Two different hands: in a heart the wrists sit about two hand sizes apart. MediaPipe can
+    # report one hand twice, and two copies of a raised open hand have touching thumb and index
+    # tips with the thumbs below, which used to read as a heart.
+    if _dist(lm_a[WRIST], lm_b[WRIST]) < 1.0 * s:
+        return False
     thumbs_close = _dist(lm_a[THUMB_TIP], lm_b[THUMB_TIP]) < 0.55 * s
     index_close = _dist(lm_a[INDEX_TIP], lm_b[INDEX_TIP]) < 0.55 * s
     if not (thumbs_close and index_close):

@@ -9,6 +9,7 @@ Fixes since 2026-11-09:
 - Pressing the same reaction key again while its effect is playing no longer stacks another copy (five stacked fireworks dropped 720p video below 30 fps). A different reaction can still start.
 - With no internet on the first run, the app now says it could not download the hand model and where to save it by hand, instead of opening the camera and then crashing with a traceback.
 - `--hold`, `--cooldown`, `--fps`, `--width` and `--height` refuse `nan` and `inf`. `--cooldown nan` used to switch the cooldown off, so a held gesture fired every 0.4 s.
+- One raised hand that MediaPipe reports twice no longer fires hearts. A heart now needs two separate hands.
 
 ## 2026-11-09
 
