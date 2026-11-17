@@ -10,6 +10,7 @@ Fixes since 2026-11-09:
 - With no internet on the first run, the app now says it could not download the hand model and where to save it by hand, instead of opening the camera and then crashing with a traceback.
 - `--hold`, `--cooldown`, `--fps`, `--width` and `--height` refuse `nan` and `inf`. `--cooldown nan` used to switch the cooldown off, so a held gesture fired every 0.4 s.
 - One raised hand that MediaPipe reports twice no longer fires hearts. A heart now needs two separate hands.
+- Closing the preview window with its X button now quits, like `q`. It used to reopen on the next frame. With `--whatsapp --no-preview`, closing the output window quits.
 
 ## 2026-11-09
 

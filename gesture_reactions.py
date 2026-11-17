@@ -18,7 +18,7 @@ Keys in the preview window:
     1-8   fire a reaction by hand (see REACTION_KEYS)
     g     pause / resume gesture detection
     l     show / hide hand landmarks in the preview
-    q/Esc quit
+    q/Esc quit (closing the window with its X also quits)
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(HERE, "hand_landmarker.task")
 
 OUTPUT_WINDOW = "Gesture Reactions Output"
+PREVIEW_WINDOW = "Gesture Reactions (preview, mirrored)"
 BACKENDS = {"msmf": cv2.CAP_MSMF, "dshow": cv2.CAP_DSHOW}
 BLACK_MEAN = 3.0       # a frame darker than this on average counts as black
 WARMUP_SECONDS = 1.5   # how long a camera gets to deliver a non-black frame
@@ -255,6 +256,16 @@ def next_reaction(trigger: ReactionTrigger, hands_reaction: str | None, screen_b
     return trigger.update(hands_reaction, now)
 
 
+def window_closed(name: str) -> bool:
+    """True once the user has closed the named window with its X button. OpenCV doesn't end
+    the program for that: the next imshow() just opened the window again, so the only way
+    out was q, Esc or Ctrl+C. Some backends raise for a window that no longer exists."""
+    try:
+        return cv2.getWindowProperty(name, cv2.WND_PROP_VISIBLE) < 1
+    except cv2.error:
+        return True
+
+
 def draw_landmarks(frame, hands):
     h, w = frame.shape[:2]
     for lm in hands:
@@ -384,9 +395,15 @@ def main():
                     status += f" | {banner}"
                 cv2.putText(preview, status, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
                             (255, 255, 255), 2, cv2.LINE_AA)
-                cv2.imshow("Gesture Reactions (preview, mirrored)", preview)
+                cv2.imshow(PREVIEW_WINDOW, preview)
                 key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
+                break
+            # Closing a window with its X quits too, like q (the output window counts only
+            # when it is the sole window, i.e. --whatsapp --no-preview).
+            if not args.no_preview and window_closed(PREVIEW_WINDOW):
+                break
+            if args.no_preview and args.whatsapp and window_closed(OUTPUT_WINDOW):
                 break
             if key == ord("g"):
                 detecting = not detecting

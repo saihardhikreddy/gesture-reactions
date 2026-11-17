@@ -15,6 +15,7 @@ pytest.importorskip("cv2")
 
 from gesture_reactions import (  # noqa: E402
     backend_order, ensure_model, require_model, is_black, next_reaction, parse_args, read_frame, warm_up,
+    window_closed,
 )
 from gestures import ReactionTrigger  # noqa: E402
 
@@ -232,3 +233,19 @@ def test_gesture_shown_before_an_effect_needs_a_fresh_hold_after_it():
 def test_nothing_fires_while_the_screen_is_busy():
     trig = ReactionTrigger(hold_seconds=0.45, cooldown_seconds=0.1)
     assert all(next_reaction(trig, "thumbs_up", True, t / 30) is None for t in range(60))
+
+
+def test_window_closed_follows_the_window_visibility(monkeypatch):
+    import cv2
+    import gesture_reactions
+
+    visible = {"w": 1.0}
+    monkeypatch.setattr(gesture_reactions.cv2, "getWindowProperty", lambda name, prop: visible.get(name, 0.0))
+    assert not window_closed("w")
+    visible["w"] = 0.0  # the user clicked X
+    assert window_closed("w")
+
+    def gone(name, prop):
+        raise cv2.error("NULL window")
+    monkeypatch.setattr(gesture_reactions.cv2, "getWindowProperty", gone)
+    assert window_closed("w")
