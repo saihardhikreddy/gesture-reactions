@@ -183,7 +183,7 @@ python gesture_reactions.py [options]
 
 The .bat files pass options through, for example `run.bat --camera 1`.
 
-**Keys** (click the preview window first): `1`–`8` fire a reaction by hand · `g` pause detection · `l` show the hand skeleton · `q` / `Esc` quit.
+**Keys** (click the preview window first): `1`–`8` fire a reaction by hand · `g` pause detection · `l` show the hand skeleton · `q` / `Esc` quit (closing the window with its X quits too).
 
 ## 🛠️ Troubleshooting
 

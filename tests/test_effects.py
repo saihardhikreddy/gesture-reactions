@@ -74,6 +74,15 @@ def test_player_triggers_and_clears():
     assert not player.busy
 
 
+def test_a_stalled_frame_does_not_skip_a_whole_reaction():
+    player = EffectPlayer()
+    player.trigger("hearts", W, H)
+    player.render(np.zeros((H, W, 3), np.uint8), 2.5)  # the camera stalled for 2.5 s
+    assert player.busy and player.effects[0].t == pytest.approx(EffectPlayer.MAX_STEP)
+    player.render(np.zeros((H, W, 3), np.uint8), -1.0)  # a clock that stepped back changes nothing
+    assert player.effects[0].t == pytest.approx(EffectPlayer.MAX_STEP)
+
+
 def test_repeated_trigger_does_not_stack_copies():
     player = EffectPlayer()
     assert player.trigger("hearts", W, H)

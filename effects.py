@@ -1280,7 +1280,14 @@ class EffectPlayer:
     def busy(self) -> bool:
         return bool(self.effects)
 
+    # Longest step one frame may advance an effect. After a stall (the camera can pause for up
+    # to 2 s before the app gives up on it, or a laptop hangs for a moment) the next frame's dt
+    # covered the whole gap, so a reaction that had just started jumped to its end and vanished
+    # unseen, and particles flew off in one step. Slow machines (3 fps, dt 0.33 s) are not affected.
+    MAX_STEP = 0.5
+
     def render(self, frame: np.ndarray, dt: float):
+        dt = min(max(dt, 0.0), self.MAX_STEP)
         for fx in self.effects:
             fx.update(dt)
             fx.draw(frame)
