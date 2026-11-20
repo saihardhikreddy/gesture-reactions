@@ -289,6 +289,32 @@ def positive(kind):
     return parse
 
 
+def file_frame_period(cap, fallback_fps: float) -> float:
+    """Seconds between frames of a video file: its own frame rate, or fallback_fps when the
+    container doesn't give a believable one."""
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if not (fps and math.isfinite(fps) and 1 <= fps <= 240):
+        fps = fallback_fps
+    return 1.0 / fps
+
+
+class FramePacer:
+    """Holds a loop to one pass per period. A late pass starts the schedule afresh instead of
+    rushing the next frames to catch up."""
+
+    def __init__(self, period: float, clock=time.monotonic, sleep=time.sleep):
+        self.period, self.clock, self.sleep = period, clock, sleep
+        self.due = clock() + period
+
+    def wait(self) -> None:
+        delay = self.due - self.clock()
+        if delay > 0:
+            self.sleep(delay)
+            self.due += self.period
+        else:
+            self.due = self.clock() + self.period
+
+
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description="macOS-style gesture reactions for any video call app.")
     ap.add_argument("--camera", default="0", help="webcam index (0, 1, ...) or a video file path")
@@ -347,6 +373,10 @@ def main():
     player = EffectPlayer()
     print("Preparing effects...")
     player.preload(w, h)  # build the 3D sprites now, not on the first reaction
+    # A webcam delivers frames in real time, and the virtual camera paces sends to --fps. A video
+    # file with neither was read as fast as the PC could decode it, so a test clip played several
+    # times too fast and a gesture had to be held for several seconds of video to fire.
+    pacer = FramePacer(file_frame_period(cap, args.fps)) if not is_webcam and cam is None else None
     detecting, show_landmarks = True, False
     start = last = time.monotonic()
     last_ts = -1
@@ -417,6 +447,8 @@ def main():
 
             if cam is not None:
                 cam.sleep_until_next_frame()
+            elif pacer is not None:
+                pacer.wait()
     except KeyboardInterrupt:
         pass
     finally:

@@ -14,6 +14,7 @@ np = pytest.importorskip("numpy")
 pytest.importorskip("cv2")
 
 from gesture_reactions import (  # noqa: E402
+    FramePacer, file_frame_period,
     backend_order, ensure_model, require_model, is_black, next_reaction, parse_args, read_frame, warm_up,
     window_closed,
 )
@@ -249,3 +250,28 @@ def test_window_closed_follows_the_window_visibility(monkeypatch):
         raise cv2.error("NULL window")
     monkeypatch.setattr(gesture_reactions.cv2, "getWindowProperty", gone)
     assert window_closed("w")
+
+
+def test_video_files_play_at_their_own_frame_rate():
+    class Cap:
+        def __init__(self, fps):
+            self.fps = fps
+
+        def get(self, prop):
+            return self.fps
+
+    assert file_frame_period(Cap(25.0), 30) == pytest.approx(0.04)
+    for bad in (0.0, float("nan"), 1000.0):          # missing or nonsense metadata
+        assert file_frame_period(Cap(bad), 30) == pytest.approx(1 / 30)
+
+    t, slept = [0.0], []
+    pacer = FramePacer(0.04, clock=lambda: t[0], sleep=lambda d: (slept.append(d), t.__setitem__(0, t[0] + d)))
+    t[0] += 0.01                                     # a fast frame waits out the rest of its slot
+    pacer.wait()
+    assert slept == [pytest.approx(0.03)] and t[0] == pytest.approx(0.04)
+    t[0] += 0.1                                      # a slow one doesn't make the next ones rush
+    pacer.wait()
+    assert len(slept) == 1
+    t[0] += 0.01
+    pacer.wait()
+    assert slept[-1] == pytest.approx(0.03)

@@ -12,6 +12,7 @@ Fixes since 2026-11-09:
 - One raised hand that MediaPipe reports twice no longer fires hearts. A heart now needs two separate hands.
 - A reaction that starts just before the camera stalls for a moment now plays out instead of jumping to its end and vanishing unseen.
 - Closing the preview window with its X button now quits, like `q`. It used to reopen on the next frame. With `--whatsapp --no-preview`, closing the output window quits.
+- A video file passed with `--camera` (for testing) now plays at its own frame rate when there is no virtual camera. It used to play as fast as the PC could decode it, so gestures had to be held for several seconds of video.
 
 ## 2026-11-09
 
