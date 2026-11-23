@@ -172,6 +172,15 @@ def is_heart(lm_a: Sequence[Any], lm_b: Sequence[Any]) -> bool:
     return thumb_y - index_y > 0.5 * s
 
 
+def same_hand(lm_a: Sequence[Any], lm_b: Sequence[Any]) -> bool:
+    """MediaPipe sometimes reports one hand twice, as two near-identical skeletons. Two real
+    hands can't share a wrist and a palm: even two fists pressed together keep their wrists
+    about a hand size apart, so a third of one is a safe limit."""
+    s = (hand_size(lm_a) + hand_size(lm_b)) / 2
+    return (_dist(lm_a[WRIST], lm_b[WRIST]) < 0.35 * s
+            and _dist(lm_a[MIDDLE_MCP], lm_b[MIDDLE_MCP]) < 0.35 * s)
+
+
 def classify_frame(hands: Sequence[Sequence[Any]]) -> str | None:
     """Map detected hands in a video frame to an interactive macOS-style reaction name.
 
@@ -184,10 +193,15 @@ def classify_frame(hands: Sequence[Sequence[Any]]) -> str | None:
     Returns:
         Reaction name string (matching ALL_REACTIONS) or None if no reaction triggered.
     """
+    hands = list(hands[:2])
+    if len(hands) == 2 and same_hand(hands[0], hands[1]):
+        # One thumbs-up reported twice used to count as two and fire fireworks (likewise rain,
+        # confetti and lasers). Treat it as the single hand it is.
+        hands = hands[:1]
     if len(hands) >= 2 and is_heart(hands[0], hands[1]):
         return REACTION_HEARTS
 
-    gestures = [classify_hand(h) for h in hands[:2]]
+    gestures = [classify_hand(h) for h in hands]
     counts = Counter(g for g in gestures if g)
 
     if counts[THUMBS_UP] >= 2:

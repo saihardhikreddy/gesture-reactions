@@ -121,6 +121,20 @@ def test_two_hand_reactions_ignore_order_and_position():
         assert classify_hand(make_hand("im", cx=cx, cy=cy)) == PEACE
 
 
+def test_one_hand_reported_twice_counts_once():
+    up = make_hand(thumb=True, angle=UP)
+    jittered = [(x + 0.002, y - 0.001, z) for x, y, z in up]   # the copy is never pixel-exact
+    assert classify_frame([up, jittered]) == REACTION_THUMBS_UP   # not fireworks
+    peace = make_hand("im")
+    assert classify_frame([peace, list(peace)]) == REACTION_BALLOONS   # not confetti
+    rock = make_hand("ip")
+    assert classify_frame([rock, list(rock)]) is None                # not lasers
+    # Two real fists side by side, a hand size apart, are still two hands.
+    near_l = make_hand(thumb=True, angle=DOWN, mirror=True, cx=0.45)
+    near_r = make_hand(thumb=True, angle=UP, cx=0.55)
+    assert classify_frame([near_l, near_r]) == REACTION_FIREWORKS
+
+
 def test_only_first_two_hands_count():
     L, R = {"cx": 0.3}, {"cx": 0.7}
     extra = make_hand("ip", cx=0.5)
