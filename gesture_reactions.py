@@ -443,7 +443,15 @@ def main():
             elif key == ord("l"):
                 show_landmarks = not show_landmarks
             elif key in REACTION_KEYS:
-                player.trigger(REACTION_KEYS[key], w, h)
+                name = REACTION_KEYS[key]
+                # Same feedback as a gesture: the preview's status line names the reaction (it only
+                # did for gestures, so a key press for a reaction already playing looked ignored
+                # and one that started looked no different).
+                if player.trigger(name, w, h):
+                    banner, banner_until = name.replace("_", " "), now + 1.5
+                    print("Reaction (key):", name)
+                else:
+                    banner, banner_until = f"{name.replace('_', ' ')} already playing", now + 1.0
 
             if cam is not None:
                 cam.sleep_until_next_frame()

@@ -10,6 +10,7 @@ Fixes since 2026-11-09:
 - With no internet on the first run, the app now says it could not download the hand model and where to save it by hand, instead of opening the camera and then crashing with a traceback.
 - `--hold`, `--cooldown`, `--fps`, `--width` and `--height` refuse `nan` and `inf`. `--cooldown nan` used to switch the cooldown off, so a held gesture fired every 0.4 s.
 - One raised hand that MediaPipe reports twice no longer fires hearts. A heart now needs two separate hands.
+- A reaction fired with the 1-8 keys is now named in the preview's status line, as a gesture's is, and a key for a reaction that is already playing says so instead of seeming to do nothing.
 - One hand that MediaPipe reports twice no longer counts as two: a single thumbs up fired fireworks, and a single peace sign confetti. It now gives the one-hand reaction.
 - A reaction that starts just before the camera stalls for a moment now plays out instead of jumping to its end and vanishing unseen.
 - Closing the preview window with its X button now quits, like `q`. It used to reopen on the next frame. With `--whatsapp --no-preview`, closing the output window quits.
