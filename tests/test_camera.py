@@ -170,7 +170,7 @@ def test_model_download_is_atomic(tmp_path, monkeypatch):
             f.write(b"half a model")
         raise OSError("connection reset")
 
-    monkeypatch.setattr(gesture_reactions.urllib.request, "urlretrieve", cut_off)
+    monkeypatch.setattr(gesture_reactions, "download", cut_off)
     with pytest.raises(OSError):
         ensure_model(path, "https://example.invalid/model")
     assert os.listdir(tmp_path) == []  # nothing half-written left behind
@@ -179,10 +179,43 @@ def test_model_download_is_atomic(tmp_path, monkeypatch):
         with open(dest, "wb") as f:
             f.write(b"model")
 
-    monkeypatch.setattr(gesture_reactions.urllib.request, "urlretrieve", ok)
+    monkeypatch.setattr(gesture_reactions, "download", ok)
     assert ensure_model(path, "https://example.invalid/model") == path
     assert open(path, "rb").read() == b"model"
     assert os.listdir(tmp_path) == ["hand_landmarker.task"]
+
+
+def test_model_download_has_a_timeout(tmp_path, monkeypatch):
+    import io
+
+    import gesture_reactions
+
+    seen = {}
+
+    def fake_urlopen(url, timeout=None):
+        seen["timeout"] = timeout
+        return io.BytesIO(b"model bytes")
+
+    monkeypatch.setattr(gesture_reactions.urllib.request, "urlopen", fake_urlopen)
+    dest = str(tmp_path / "m.part")
+    gesture_reactions.download("https://example.invalid/model", dest)
+    assert seen["timeout"] == gesture_reactions.DOWNLOAD_TIMEOUT
+    assert open(dest, "rb").read() == b"model bytes"
+
+
+def test_stalled_model_download_explains_what_to_do(tmp_path, monkeypatch):
+    import gesture_reactions
+
+    path = str(tmp_path / "hand_landmarker.task")
+
+    def stalled(url, timeout=None):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(gesture_reactions.urllib.request, "urlopen", stalled)
+    with pytest.raises(SystemExit) as exit_info:
+        require_model(path, "https://example.invalid/model")
+    assert "Could not download the hand tracking model" in str(exit_info.value.code)
+    assert os.listdir(tmp_path) == []
 
 
 def test_failed_model_download_explains_what_to_do(tmp_path, monkeypatch):
@@ -195,7 +228,7 @@ def test_failed_model_download_explains_what_to_do(tmp_path, monkeypatch):
     def offline(url, dest):
         raise urllib.error.URLError("getaddrinfo failed")
 
-    monkeypatch.setattr(gesture_reactions.urllib.request, "urlretrieve", offline)
+    monkeypatch.setattr(gesture_reactions, "download", offline)
     with pytest.raises(SystemExit) as exit_info:
         require_model(path, "https://example.invalid/model")
     message = str(exit_info.value.code)

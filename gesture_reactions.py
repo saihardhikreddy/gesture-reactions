@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import shutil
 import sys
 import time
 import urllib.request
@@ -52,6 +53,7 @@ BACKENDS = {"msmf": cv2.CAP_MSMF, "dshow": cv2.CAP_DSHOW}
 BLACK_MEAN = 3.0       # a frame darker than this on average counts as black
 WARMUP_SECONDS = 1.5   # how long a camera gets to deliver a non-black frame
 READ_GRACE_SECONDS = 2.0  # how long the camera may stop delivering frames before we give up
+DOWNLOAD_TIMEOUT = 30.0   # seconds the model server may go silent before the download gives up
 WHATSAPP_STEPS = """\
 WhatsApp mode: the "Gesture Reactions Output" window is what the other person sees.
   1. Keep that window open (not minimised). Quit WhatsApp from the tray first if it's running.
@@ -70,6 +72,14 @@ HAND_CONNECTIONS = [
 ]
 
 
+def download(url: str, dest: str, timeout: float = DOWNLOAD_TIMEOUT) -> None:
+    """Save url to dest. urlretrieve() has no timeout, so a connection that stalled on the first
+    run (captive Wi-Fi, a flaky proxy) sat at "Downloading..." forever instead of failing with
+    require_model()'s message. A stall now raises TimeoutError, an OSError, after `timeout`."""
+    with urllib.request.urlopen(url, timeout=timeout) as response, open(dest, "wb") as out:
+        shutil.copyfileobj(response, out)
+
+
 def ensure_model(path: str = MODEL_PATH, url: str = MODEL_URL) -> str:
     """Download the hand model once. It goes to a temporary file first, so a
     download cut off halfway can't leave a broken model that fails every run."""
@@ -77,7 +87,7 @@ def ensure_model(path: str = MODEL_PATH, url: str = MODEL_URL) -> str:
         print("Downloading hand tracking model (~8 MB)...")
         partial = path + ".part"
         try:
-            urllib.request.urlretrieve(url, partial)
+            download(url, partial)
             os.replace(partial, path)
         finally:
             if os.path.exists(partial):
