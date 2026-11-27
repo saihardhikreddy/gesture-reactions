@@ -4,6 +4,8 @@
 
 Fixes since 2026-11-09:
 
+- New `--virtual-device` option chooses which virtual camera gets the output instead of the first one pyvirtualcam finds: the device name on Windows and macOS (`--virtual-device "OBS Virtual Camera"`), the v4l2loopback path on Linux (`--virtual-device /dev/video2`).
+
 - A webcam that drops a frame no longer stops the program. Reads are retried for up to 2 seconds, and if the camera is really gone the app says so before it quits. A video file still stops when it ends.
 - A gesture shown just before you fired a reaction with the 1-8 keys no longer fires again the moment that effect ends. Hold the gesture afresh to trigger it.
 - Pressing the same reaction key again while its effect is playing no longer stacks another copy (five stacked fireworks dropped 720p video below 30 fps). A different reaction can still start.

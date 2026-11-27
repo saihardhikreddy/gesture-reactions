@@ -251,6 +251,12 @@ def test_args_reject_nonsense_values():
     assert parse_args(["--whatsapp", "--no-preview"]).no_virtual_cam
 
 
+def test_virtual_device_is_passed_through_as_given():
+    assert parse_args([]).virtual_device is None
+    assert parse_args(["--virtual-device", "/dev/video2"]).virtual_device == "/dev/video2"
+    assert parse_args(["--virtual-device", "OBS Virtual Camera"]).virtual_device == "OBS Virtual Camera"
+
+
 def test_gesture_shown_before_an_effect_needs_a_fresh_hold_after_it():
     trig = ReactionTrigger(hold_seconds=0.45, cooldown_seconds=3.0)
     # Peace held for 0.3 s (not long enough), then a reaction is fired with a key.

@@ -13,6 +13,7 @@ captures and passes on as "DroidCam Video" (see README.md).
     python gesture_reactions.py --no-virtual-cam   # preview window only
     python gesture_reactions.py --whatsapp    # clean output window for OBS + DroidCam
     python gesture_reactions.py --list-cameras     # which camera index is which
+    python gesture_reactions.py --virtual-device /dev/video2   # Linux: which v4l2loopback device
 
 Keys in the preview window:
     1-8   fire a reaction by hand (see REACTION_KEYS)
@@ -336,6 +337,10 @@ def parse_args(argv=None):
     ap.add_argument("--list-cameras", action="store_true",
                     help="show which camera indexes 0-5 work with each backend, then exit")
     ap.add_argument("--no-virtual-cam", action="store_true", help="only show the preview window")
+    ap.add_argument("--virtual-device", default=None, metavar="DEVICE",
+                    help="virtual camera to send to: on Linux a v4l2loopback path such as /dev/video2, "
+                         "on Windows/macOS the device name, e.g. 'OBS Virtual Camera'. "
+                         "Default: pyvirtualcam picks the first one it finds")
     ap.add_argument("--no-preview", action="store_true", help="don't open a preview window")
     ap.add_argument("--whatsapp", action="store_true",
                     help="skip the virtual camera and show an unmirrored output window for OBS to capture")
@@ -370,7 +375,7 @@ def main():
             import pyvirtualcam
 
             cam = pyvirtualcam.Camera(width=w, height=h, fps=args.fps,
-                                      fmt=pyvirtualcam.PixelFormat.BGR)
+                                      fmt=pyvirtualcam.PixelFormat.BGR, device=args.virtual_device)
             print(f"Virtual camera started: {cam.device}. Pick it as the camera in your call app.")
         except Exception as e:  # noqa: BLE001
             print(f"Virtual camera unavailable ({e}).\n"

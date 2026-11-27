@@ -177,6 +177,9 @@ python gesture_reactions.py [options]
   --backend auto    camera API: auto (Media Foundation, then DirectShow), msmf or dshow
   --list-cameras    show which camera numbers work and which give a black picture
   --whatsapp        output window for OBS + DroidCam instead of the virtual camera
+  --virtual-device D  which virtual camera to send to (default: the first one found)
+                      Windows/macOS: its name, e.g. "OBS Virtual Camera"
+                      Linux: the v4l2loopback device path, e.g. /dev/video2
   --no-virtual-cam  preview only
   --no-preview      no preview window
 ```
@@ -197,6 +200,17 @@ You're running an old version that only tried DirectShow. Run **`update.bat`**, 
 <summary><b>"Could not open camera"</b></summary>
 
 Close other apps using the webcam (including the call app's preview), then run `run-whatsapp.bat --list-cameras` and use a number that says `picture OK`, for example `run.bat --camera 1`.
+</details>
+
+<details>
+<summary><b>The call app shows a different virtual camera, or "Virtual camera unavailable"</b></summary>
+
+By default the picture goes to the first virtual camera pyvirtualcam finds. To choose one, pass `--virtual-device`:
+
+- **Windows / macOS:** the camera's name as the call app lists it, in quotes, for example `run.bat --virtual-device "OBS Virtual Camera"`.
+- **Linux (v4l2loopback):** the device path, for example `python gesture_reactions.py --virtual-device /dev/video2`. `v4l2-ctl --list-devices` shows which `/dev/video*` are loopback devices and which are real webcams.
+
+If the name or path is wrong, the app prints `Virtual camera unavailable (...)` with pyvirtualcam's reason.
 </details>
 
 <details>
